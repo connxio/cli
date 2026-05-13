@@ -225,6 +225,30 @@ Primary package:
 npm install -g @connxio/cli
 ```
 
+The package should be public on npm and support direct execution with `npx`:
+
+```bash
+npx @connxio/cli
+npx @connxio/cli mcp serve
+```
+
+Use manual SemVer initially. Stay in `0.x` while the CLI/MCP command and tool contracts are still stabilizing, then move to `1.0.0` once the context model, MCP tools, and installation flow are stable enough for customer use.
+
+Preferred npm publishing model:
+
+- Publish under the `@connxio` npm scope as `@connxio/cli`.
+- Publish publicly with `npm publish --access public` when publishing manually.
+- Prefer npm trusted publishing from GitHub Actions before public customer releases so the repo does not need a long-lived npm token.
+- Use npm provenance when publishing from GitHub Actions.
+
+Distribution scope for MVP:
+
+- Require users to have Node.js/npm available.
+- Do not add an installer script yet.
+- Do not add standalone binary packaging yet.
+- Do not add Vite+/tsdown `exe` targets or `@tsdown/exe` yet.
+- Use `vp pack` for npm package builds only.
+
 MCP client configs should use the stable `connxio mcp serve` command.
 
 Later packaging options:

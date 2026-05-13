@@ -141,6 +141,20 @@ Ownership:
 - `plugins/agent` is reserved for cross-agent plugin packaging with skills and MCP config.
 - `docs` contains client-specific setup documentation.
 
+## Distribution And Releases
+
+- Publish the CLI as the public npm package `@connxio/cli`.
+- The package must support global installation with `npm install -g @connxio/cli`.
+- The package must support direct execution with `npx @connxio/cli`.
+- Use manual SemVer initially. Stay in `0.x` until the CLI/MCP contracts are stable enough for customer use.
+- Prefer npm trusted publishing from GitHub Actions for public releases, with npm provenance enabled.
+- If publishing manually, scoped public packages need `npm publish --access public`.
+- Require Node.js/npm for MVP distribution.
+- Do not add an installer script yet.
+- Do not add standalone binary packaging yet.
+- Do not add Vite+/tsdown `exe` targets or `@tsdown/exe` yet.
+- Use Vite+ `vp pack` for npm package builds only.
+
 ## Non-Goals For MVP
 
 - Do not build a complete Connxio CLI yet.
