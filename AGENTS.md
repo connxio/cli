@@ -27,7 +27,7 @@ connxio mcp doctor
 - The `connxio` executable is the stable user-facing command.
 - MCP functionality belongs under `connxio mcp ...`.
 - The MCP server must be client-agnostic and work with Claude Code, Codex, VS Code, Claude Desktop, Cursor, and other MCP clients.
-- The MCP server should call the public Connxio API over HTTP.
+- The MCP server should call the public Connxio API over HTTPS.
 - Default Connxio API base URL is `https://api.connxio.com`; support `CONNXIO_API_BASE_URL` and `connxio context add --base-url` overrides.
 - For local development against self-signed HTTPS endpoints, support `CONNXIO_INSECURE_TLS=true`. Never recommend this for production.
 - Do not couple this project to VS Code APIs or any single MCP client.
@@ -96,13 +96,14 @@ Connxio-Api-Key: <api key>
 
 V2 management calls should use `Accept: application/json; x-api-version=2.0` and `Content-Type: application/json; x-api-version=2.0` when sending JSON bodies.
 
+Code component uploads also use `PUT /v2/codecomponents`. The CLI reads local `.dll` or `.zip` files, base64-encodes the file contents into `mappingDll`, and sets `componentOriginalFilename`. When uploading a `.dll`, support auto-zipping the containing output directory when requested and default to auto-zipping if the existing component was previously uploaded as a `.zip`.
+
 ## Coding Guidance
 
 - Use TypeScript.
 - Use Vite+ as the repository toolchain.
 - Keep shared Vite+ configuration in the root `vite.config.ts`.
-- Prefer `vp install`, `vp check`, `vp test`, `vp run`, and `vp pack` over direct package-manager or tool-specific commands when working in this repository.
-- Configure CLI/package packaging through the Vite+ `pack` block rather than adding a separate `tsdown.config.ts` unless there is a concrete need.
+- Use `vp install`, `vp check`, `vp test`, `vp run`, and `vp pack` over direct package-manager or tool-specific commands when working in this repository.
 - Prefer small modules with clear responsibilities.
 - Use schema validation for tool inputs.
 - Keep MCP tool outputs concise enough for model context.
@@ -162,19 +163,8 @@ Ownership:
 
 - Publish the CLI as the public npm package `@connxio/cli`.
 - The package must support global installation with `npm install -g @connxio/cli`.
-- The package must support direct execution with `npx @connxio/cli`.
-- Use manual SemVer initially. Stay in `0.x` until the CLI/MCP contracts are stable enough for customer use.
+- Use SemVer versioning for releases.
+- Breaking changes are acceptable while the CLI is still in the `0.x.x` range. Prefer the correct, clearer contract over backward-compatibility shims until `1.0.0`.
 - Prefer npm trusted publishing from GitHub Actions for public releases, with npm provenance enabled.
 - If publishing manually, scoped public packages need `npm publish --access public`.
-- Require Node.js/npm for MVP distribution.
-- Do not add an installer script yet.
-- Do not add standalone binary packaging yet.
-- Do not add Vite+/tsdown `exe` targets or `@tsdown/exe` yet.
 - Use Vite+ `vp pack` for npm package builds only.
-
-## Non-Goals For MVP
-
-- Do not build a complete Connxio CLI yet.
-- Do not build a hosted MCP server yet.
-- Do not build client-specific plugins before the core MCP server works.
-- Do not rely on VS Code-specific credential storage as the primary credential model.

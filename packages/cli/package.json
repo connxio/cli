@@ -1,6 +1,6 @@
 {
   "name": "@connxio/cli",
-  "version": "0.1.0",
+  "version": "0.1.2-beta.2",
   "description": "Connxio command-line tool and MCP server.",
   "keywords": [
     "cli",
@@ -28,19 +28,21 @@
   "exports": {
     ".": "./dist/index.mjs"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^14.0.3",
     "update-notifier": "^7.3.1",
+    "yazl": "^3.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/update-notifier": "^6.0.8"
+    "@types/update-notifier": "^6.0.8",
+    "@types/yazl": "^2.4.5"
   },
   "engines": {
     "node": ">=20"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

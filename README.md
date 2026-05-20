@@ -231,8 +231,8 @@ Integration tools:
 
 - `list_integrations`
 - `get_integration`
-- `upsert_integration`
-- `upsert_integration_no_validation`
+- `create_integration`
+- `create_integration_no_validation`
 - `update_integration`
 - `delete_integration`
 
@@ -241,7 +241,7 @@ Code component tools:
 - `list_code_components`
 - `get_code_component`
 - `get_code_component_versions`
-- `upsert_code_component`
+- `create_code_component`
 - `deprecate_code_component`
 - `rename_code_component`
 - `delete_code_component`
@@ -250,14 +250,14 @@ Environment variable tools:
 
 - `list_environment_variables`
 - `get_environment_variable`
-- `upsert_environment_variable`
+- `create_environment_variable`
 - `delete_environment_variable`
 
 Security configuration tools:
 
 - `list_security_configs`
 - `get_security_config`
-- `upsert_security_config`
+- `create_security_config`
 - `delete_security_config`
 
 Write tools require `contextId`. Destructive tools require `contextId` and `confirm: true`.
