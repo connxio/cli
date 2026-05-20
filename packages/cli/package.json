@@ -31,6 +31,10 @@
   "publishConfig": {
     "access": "public"
   },
+  "scripts": {
+    "prepack": "cp ../../README.md ./README.md",
+    "postpack": "rm -f ./README.md"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^14.0.3",
