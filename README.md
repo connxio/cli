@@ -10,8 +10,8 @@ connxio mcp serve
 
 ## Prerequisites
 
-- Node.js 20 or newer
-- Connxio OAuth client credentials for your developer/operator account
+- Node.js 24 or newer
+- Connxio OAuth client credentials
 - A Connxio subscription-scoped API key for each subscription context you want to use
 
 ## Install
@@ -29,8 +29,6 @@ connxio --help
 ```
 
 ## Configure OAuth
-
-Configure OAuth once per developer/operator:
 
 ```bash
 connxio auth configure
@@ -97,6 +95,87 @@ Remove a context:
 connxio context remove <context-id>
 ```
 
+## Register With VS Code
+
+VS Code 1.99+ supports MCP servers natively via GitHub Copilot agent mode.
+
+**Option 1 — user settings (all projects)**
+
+Open `settings.json` (`Cmd+Shift+P` → _Preferences: Open User Settings (JSON)_) and add:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "connxio": {
+        "type": "stdio",
+        "command": "connxio",
+        "args": ["mcp", "serve"]
+      }
+    }
+  }
+}
+```
+
+**Option 2 — workspace settings (this project only)**
+
+Create `.vscode/mcp.json` in your project root:
+
+```json
+{
+  "servers": {
+    "connxio": {
+      "type": "stdio",
+      "command": "connxio",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+After saving, open a Copilot chat in agent mode (`@workspace` or the **Agent** dropdown) and the Connxio tools will be available.
+
+If you need to pass environment variables (e.g. for OAuth or a custom API base URL), add an `env` block:
+
+```json
+{
+  "servers": {
+    "connxio": {
+      "type": "stdio",
+      "command": "connxio",
+      "args": ["mcp", "serve"],
+      "env": {
+        "CONNXIO_OAUTH_CLIENT_ID": "<client-id>",
+        "CONNXIO_OAUTH_CLIENT_SECRET": "<client-secret>"
+      }
+    }
+  }
+}
+```
+
+Do not commit files containing OAuth client secrets to source control.
+
+## Register With Claude Code
+
+Register the installed MCP server:
+
+```bash
+claude mcp add --scope user --transport stdio connxio -- connxio mcp serve
+```
+
+Verify registration:
+
+```bash
+claude mcp list
+```
+
+If you need to replace an existing registration:
+
+```bash
+claude mcp remove connxio
+claude mcp add --scope user --transport stdio connxio -- connxio mcp serve
+```
+
 ## API Base URL
 
 The default API base URL is:
@@ -135,36 +214,6 @@ For HTTP troubleshooting, enable redacted request diagnostics:
 
 ```bash
 CONNXIO_DEBUG_HTTP=true connxio mcp doctor
-```
-
-## Register With Claude Code
-
-Register the installed MCP server:
-
-```bash
-claude mcp add --scope user --transport stdio connxio -- connxio mcp serve
-```
-
-Verify registration:
-
-```bash
-claude mcp list
-```
-
-If you need to replace an existing registration:
-
-```bash
-claude mcp remove connxio
-claude mcp add --scope user --transport stdio connxio -- connxio mcp serve
-```
-
-For local API development, include environment variables:
-
-```bash
-claude mcp add --scope user --transport stdio connxio \
-  --env CONNXIO_API_BASE_URL=http://localhost:5119/api \
-  --env CONNXIO_DEBUG_HTTP=true \
-  -- connxio mcp serve
 ```
 
 ## MCP Tools
