@@ -1,0 +1,21 @@
+{
+  "name": "connxio-cli-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "extensions/*",
+    "plugins/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "check": "vp check",
+    "pack": "vp pack",
+    "test": "vp test"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.0",
+    "typescript": "^6.0.3",
+    "vite-plus": "^0.1.21"
+  },
+  "packageManager": "pnpm@11.1.3"
+}
