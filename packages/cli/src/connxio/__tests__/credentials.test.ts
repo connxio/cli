@@ -1,25 +1,66 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  deleteApiKey,
-  deleteOAuthClientSecret,
-  getApiKey,
-  getCredentialStoreDescription,
-  getOAuthClientSecret,
-  hasApiKey,
-  hasOAuthClientSecret,
-  setApiKey,
-  setOAuthClientSecret,
-} from "../credentials.js";
+const keyringState = vi.hoisted(() => ({
+  available: true,
+  store: new Map<string, string>(),
+}));
+
+vi.mock("@napi-rs/keyring", () => {
+  class AsyncEntry {
+    readonly #service: string;
+    readonly #username: string;
+
+    constructor(service: string, username: string) {
+      this.#service = service;
+      this.#username = username;
+    }
+
+    async deleteCredential(): Promise<boolean> {
+      return keyringState.store.delete(`${this.#service}:${this.#username}`);
+    }
+
+    async getPassword(): Promise<string | undefined> {
+      return keyringState.store.get(`${this.#service}:${this.#username}`);
+    }
+
+    async setPassword(password: string): Promise<void> {
+      keyringState.store.set(`${this.#service}:${this.#username}`, password);
+    }
+  }
+
+  const findCredentialsAsync = vi.fn(async (service: string) => {
+    if (!keyringState.available) {
+      throw new Error("secure storage unavailable");
+    }
+
+    return [...keyringState.store.entries()]
+      .filter(([key]) => key.startsWith(`${service}:`))
+      .map(([key, password]) => ({
+        account: key.slice(service.length + 1),
+        password,
+      }));
+  });
+
+  return {
+    AsyncEntry,
+    default: { AsyncEntry, findCredentialsAsync },
+    findCredentialsAsync,
+  };
+});
+
+type CredentialsModule = typeof import("../credentials.js");
 
 let savedConfigDir: string | undefined;
 let tempDir: string;
 
 beforeEach(async () => {
+  vi.resetModules();
+  keyringState.available = true;
+  keyringState.store.clear();
   savedConfigDir = process.env.CONNXIO_CONFIG_DIR;
   tempDir = await mkdtemp(join(tmpdir(), "connxio-credentials-test-"));
   process.env.CONNXIO_CONFIG_DIR = tempDir;
@@ -28,120 +69,166 @@ beforeEach(async () => {
 afterEach(async () => {
   if (savedConfigDir === undefined) delete process.env.CONNXIO_CONFIG_DIR;
   else process.env.CONNXIO_CONFIG_DIR = savedConfigDir;
+  vi.restoreAllMocks();
   await rm(tempDir, { force: true, recursive: true });
 });
 
-describe("api key credentials", () => {
-  it("round-trips a stored api key", async () => {
-    await setApiKey("ctx-a", "secret-a");
-    expect(await getApiKey("ctx-a")).toBe("secret-a");
+describe("keyring-backed credentials", () => {
+  it("round-trips a stored api key in the OS keyring", async () => {
+    const credentials = await loadCredentials();
+
+    await credentials.setApiKey("ctx-a", "secret-a");
+
+    expect(await credentials.getApiKey("ctx-a")).toBe("secret-a");
+    expect(await credentials.hasApiKey("ctx-a")).toBe(true);
+    expect(await credentials.getCredentialStoreDescription()).toBe("OS keyring");
+    expect(keyringState.store.get(keyringRef("api-key", "ctx-a"))).toBe("secret-a");
   });
 
-  it("trims whitespace from the stored api key", async () => {
-    await setApiKey("ctx-a", "  secret-a  ");
-    expect(await getApiKey("ctx-a")).toBe("secret-a");
+  it("round-trips a stored OAuth client secret in the OS keyring", async () => {
+    const credentials = await loadCredentials();
+
+    await credentials.setOAuthClientSecret("default", "csecret");
+
+    expect(await credentials.getOAuthClientSecret("default")).toBe("csecret");
+    expect(await credentials.hasOAuthClientSecret("default")).toBe(true);
+    expect(keyringState.store.get(keyringRef("oauth-client-secret", "default"))).toBe("csecret");
   });
 
-  it("rejects empty api keys", async () => {
-    await expect(setApiKey("ctx-a", "   ")).rejects.toThrow(/API key cannot be empty/);
+  it("trims values before writing them to the keyring", async () => {
+    const credentials = await loadCredentials();
+
+    await credentials.setApiKey("ctx-a", "  secret-a  ");
+    await credentials.setOAuthClientSecret("default", "  csecret  ");
+
+    expect(await credentials.getApiKey("ctx-a")).toBe("secret-a");
+    expect(await credentials.getOAuthClientSecret("default")).toBe("csecret");
   });
 
-  it("stores multiple refs side by side", async () => {
-    await setApiKey("ctx-a", "secret-a");
-    await setApiKey("ctx-b", "secret-b");
+  it("rejects empty values", async () => {
+    const credentials = await loadCredentials();
 
-    expect(await getApiKey("ctx-a")).toBe("secret-a");
-    expect(await getApiKey("ctx-b")).toBe("secret-b");
-  });
-
-  it("throws a helpful error mentioning `connxio context add` when the key is missing", async () => {
-    await expect(getApiKey("missing")).rejects.toThrow(/connxio context add missing/);
-  });
-
-  it("does not crash when the credential file does not exist yet", async () => {
-    expect(await hasApiKey("ctx-a")).toBe(false);
-    await expect(getApiKey("ctx-a")).rejects.toThrow(/Missing credential/);
-  });
-
-  it("deletes one ref but leaves others", async () => {
-    await setApiKey("ctx-a", "secret-a");
-    await setApiKey("ctx-b", "secret-b");
-
-    await deleteApiKey("ctx-a");
-
-    expect(await hasApiKey("ctx-a")).toBe(false);
-    expect(await hasApiKey("ctx-b")).toBe(true);
-    expect(await getApiKey("ctx-b")).toBe("secret-b");
-  });
-
-  it("hasApiKey returns true for stored keys and false otherwise", async () => {
-    expect(await hasApiKey("ctx-a")).toBe(false);
-    await setApiKey("ctx-a", "secret-a");
-    expect(await hasApiKey("ctx-a")).toBe(true);
-    expect(await hasApiKey("ctx-other")).toBe(false);
-  });
-
-  it("tolerates deleting a missing ref", async () => {
-    await expect(deleteApiKey("never-added")).resolves.toBeUndefined();
-    expect(await hasApiKey("never-added")).toBe(false);
-  });
-});
-
-describe("oauth client secret credentials", () => {
-  it("round-trips a stored client secret", async () => {
-    await setOAuthClientSecret("default", "csecret");
-    expect(await getOAuthClientSecret("default")).toBe("csecret");
-  });
-
-  it("trims whitespace from the stored client secret", async () => {
-    await setOAuthClientSecret("default", "  csecret  ");
-    expect(await getOAuthClientSecret("default")).toBe("csecret");
-  });
-
-  it("rejects empty client secrets", async () => {
-    await expect(setOAuthClientSecret("default", "   ")).rejects.toThrow(
+    await expect(credentials.setApiKey("ctx-a", "   ")).rejects.toThrow(/API key cannot be empty/);
+    await expect(credentials.setOAuthClientSecret("default", "   ")).rejects.toThrow(
       /OAuth client secret cannot be empty/,
     );
   });
 
-  it("throws a helpful error mentioning `connxio auth configure` when missing", async () => {
-    await expect(getOAuthClientSecret("default")).rejects.toThrow(/connxio auth configure/);
+  it("migrates an api key from the legacy credentials file into the keyring", async () => {
+    await writeLegacyCredentialFile({ apiKeys: { "ctx-a": "secret-a" }, oauthClientSecrets: {} });
+    const credentials = await loadCredentials();
+
+    expect(await credentials.getApiKey("ctx-a")).toBe("secret-a");
+    expect(keyringState.store.get(keyringRef("api-key", "ctx-a"))).toBe("secret-a");
+    await expect(hasLegacyCredentialFile()).resolves.toBe(false);
   });
 
-  it("hasOAuthClientSecret reflects stored state", async () => {
-    expect(await hasOAuthClientSecret("default")).toBe(false);
-    await setOAuthClientSecret("default", "csecret");
-    expect(await hasOAuthClientSecret("default")).toBe(true);
+  it("migrates an OAuth secret from the legacy credentials file and removes the file when empty", async () => {
+    await writeLegacyCredentialFile({ apiKeys: {}, oauthClientSecrets: { default: "csecret" } });
+    const credentials = await loadCredentials();
+
+    expect(await credentials.getOAuthClientSecret("default")).toBe("csecret");
+    expect(keyringState.store.get(keyringRef("oauth-client-secret", "default"))).toBe("csecret");
+    await expect(hasLegacyCredentialFile()).resolves.toBe(false);
   });
 
-  it("deletes one client secret ref but leaves others", async () => {
-    await setOAuthClientSecret("default", "csecret");
-    await setOAuthClientSecret("alt", "alt-secret");
+  it("deletes both the keyring entry and legacy file entry during migration", async () => {
+    await writeLegacyCredentialFile({ apiKeys: { "ctx-a": "legacy-a" }, oauthClientSecrets: {} });
+    keyringState.store.set(keyringRef("api-key", "ctx-a"), "secret-a");
+    const credentials = await loadCredentials();
 
-    await deleteOAuthClientSecret("default");
+    await credentials.deleteApiKey("ctx-a");
 
-    expect(await hasOAuthClientSecret("default")).toBe(false);
-    expect(await hasOAuthClientSecret("alt")).toBe(true);
-    expect(await getOAuthClientSecret("alt")).toBe("alt-secret");
+    expect(await credentials.hasApiKey("ctx-a")).toBe(false);
+    expect(keyringState.store.has(keyringRef("api-key", "ctx-a"))).toBe(false);
+    await expect(hasLegacyCredentialFile()).resolves.toBe(false);
   });
 
-  it("coexists with api keys in the same store", async () => {
-    await setApiKey("ctx-a", "secret-a");
-    await setOAuthClientSecret("default", "csecret");
+  it("throws helpful missing-credential errors", async () => {
+    const credentials = await loadCredentials();
 
-    expect(await getApiKey("ctx-a")).toBe("secret-a");
-    expect(await getOAuthClientSecret("default")).toBe("csecret");
+    await expect(credentials.getApiKey("missing")).rejects.toThrow(/connxio context add missing/);
+    await expect(credentials.getOAuthClientSecret("default")).rejects.toThrow(
+      /connxio auth configure/,
+    );
+  });
+});
 
-    await deleteApiKey("ctx-a");
-    expect(await hasOAuthClientSecret("default")).toBe(true);
+describe("file fallback credentials", () => {
+  it("falls back to the local file store when secure storage is unavailable", async () => {
+    keyringState.available = false;
+    const credentials = await loadCredentials();
+
+    await credentials.setApiKey("ctx-a", "secret-a");
+    await credentials.setOAuthClientSecret("default", "csecret");
+
+    expect(await credentials.getApiKey("ctx-a")).toBe("secret-a");
+    expect(await credentials.getOAuthClientSecret("default")).toBe("csecret");
+    expect(await credentials.hasApiKey("ctx-a")).toBe(true);
+    expect(await credentials.hasOAuthClientSecret("default")).toBe(true);
+    expect(await credentials.getCredentialStoreDescription()).toContain("credentials.json");
+    await expect(readLegacyCredentialFile()).resolves.toEqual({
+      apiKeys: { "ctx-a": "secret-a" },
+      oauthClientSecrets: { default: "csecret" },
+    });
+  });
+
+  it("warns once when it falls back to file storage", async () => {
+    keyringState.available = false;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const credentials = await loadCredentials();
+
+    await credentials.hasApiKey("ctx-a");
+    await credentials.hasOAuthClientSecret("default");
+    await credentials.getCredentialStoreDescription();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("falling back to local file storage");
+  });
+
+  it("tolerates deleting a missing ref", async () => {
+    keyringState.available = false;
+    const credentials = await loadCredentials();
+
+    await expect(credentials.deleteApiKey("never-added")).resolves.toBeUndefined();
+    await expect(credentials.deleteOAuthClientSecret("never-added")).resolves.toBeUndefined();
+    expect(await credentials.hasApiKey("never-added")).toBe(false);
+    expect(await credentials.hasOAuthClientSecret("never-added")).toBe(false);
   });
 });
 
-describe("getCredentialStoreDescription", () => {
-  it("returns a string that mentions the configured directory", () => {
-    const description = getCredentialStoreDescription();
-    expect(typeof description).toBe("string");
-    expect(description).toContain(tempDir);
-    expect(description).toContain("credentials.json");
-  });
-});
+async function loadCredentials(): Promise<CredentialsModule> {
+  return import("../credentials.js");
+}
+
+function getCredentialPath(): string {
+  return join(tempDir, "credentials.json");
+}
+
+function keyringRef(kind: "api-key" | "oauth-client-secret", ref: string): string {
+  return `com.connxio.cli:${kind}:${ref}`;
+}
+
+async function readLegacyCredentialFile(): Promise<unknown> {
+  return JSON.parse(await readFile(getCredentialPath(), "utf8"));
+}
+
+async function hasLegacyCredentialFile(): Promise<boolean> {
+  try {
+    await readFile(getCredentialPath(), "utf8");
+    return true;
+  } catch (error: unknown) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function writeLegacyCredentialFile(value: {
+  apiKeys: Record<string, string>;
+  oauthClientSecrets: Record<string, string>;
+}): Promise<void> {
+  await writeFile(getCredentialPath(), `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}

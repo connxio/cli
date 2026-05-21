@@ -46,11 +46,16 @@ async function loadAuth(): Promise<typeof import("../auth.js")> {
   return import("../auth.js");
 }
 
-function stubFetch(handler: (input: URL | string, init?: RequestInit) => Response | Promise<Response>): void {
+function stubFetch(
+  handler: (input: URL | string, init?: RequestInit) => Response | Promise<Response>,
+): void {
   vi.stubGlobal("fetch", vi.fn(handler));
 }
 
-function tokenResponse(body: Record<string, unknown>, init?: { status?: number; statusText?: string }): Response {
+function tokenResponse(
+  body: Record<string, unknown>,
+  init?: { status?: number; statusText?: string },
+): Response {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
     status: init?.status ?? 200,
@@ -95,9 +100,7 @@ describe("getOAuthAccessToken", () => {
       oauth: { clientId: "cid", clientSecretRef: "default" },
     };
     mockClientSecrets.default = "csecret";
-    const fetchMock = vi.fn(async () =>
-      tokenResponse({ access_token: "tok-1", expires_in: 3600 }),
-    );
+    const fetchMock = vi.fn(async () => tokenResponse({ access_token: "tok-1", expires_in: 3600 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const auth = await loadAuth();
@@ -175,9 +178,7 @@ describe("getOAuthAccessToken", () => {
   it("throws on non-OK token responses", async () => {
     mockConfig = { contexts: [], oauth: { clientId: "cid", clientSecretRef: "default" } };
     mockClientSecrets.default = "csecret";
-    stubFetch(async () =>
-      new Response("nope", { status: 400, statusText: "Bad Request" }),
-    );
+    stubFetch(async () => new Response("nope", { status: 400, statusText: "Bad Request" }));
 
     const auth = await loadAuth();
     await expect(auth.getOAuthAccessToken()).rejects.toThrow(
@@ -204,7 +205,10 @@ describe("configureOAuth", () => {
     const auth = await loadAuth();
     expect(await auth.getOAuthAccessToken()).toBe("old-tok");
 
-    vi.stubGlobal("fetch", vi.fn(async () => tokenResponse({ access_token: "new-tok", expires_in: 3600 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => tokenResponse({ access_token: "new-tok", expires_in: 3600 })),
+    );
     await auth.configureOAuth({ clientId: "new-cid", clientSecret: "new-secret", scope: "" });
 
     expect(writtenConfig?.oauth).toEqual({

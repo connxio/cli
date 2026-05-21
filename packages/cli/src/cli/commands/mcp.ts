@@ -222,7 +222,7 @@ export function registerMcpCommands(program: Command): void {
       const problems: string[] = [];
 
       console.log(`Config: ${getConfigPath()}`);
-      console.log(`Credential store: ${getCredentialStoreDescription()}`);
+      console.log(`Credential store: ${await getCredentialStoreDescription()}`);
 
       if (!oauth.configured) {
         problems.push("OAuth is not configured. Run `connxio auth configure`.");

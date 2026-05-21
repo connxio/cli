@@ -36,7 +36,9 @@ async function loadContexts(): Promise<typeof import("../contexts.js")> {
   return import("../contexts.js");
 }
 
-function makeInput(overrides: Partial<import("../contexts.js").AddContextInput> = {}): import("../contexts.js").AddContextInput {
+function makeInput(
+  overrides: Partial<import("../contexts.js").AddContextInput> = {},
+): import("../contexts.js").AddContextInput {
   return {
     baseUrl: "https://api.example.com",
     companyId: "co-1",

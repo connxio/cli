@@ -47,10 +47,10 @@ Rules:
 - If context selection is ambiguous, return a clear error asking the user to specify `contextId`.
 - Never expose API keys to the model or logs.
 - Store non-secret context metadata in `${XDG_CONFIG_HOME:-~/.config}/connxio/config.json` on macOS/Linux and `%APPDATA%\connxio\config.json` on Windows.
-- The config file stores credential references only. The initial implementation uses a local credential-store abstraction at the same config root; keep API key handling behind `packages/cli/src/connxio/credentials.ts` so it can move to OS keychain storage later without changing context consumers.
+- The config file stores credential references only. Keep API key handling behind `packages/cli/src/connxio/credentials.ts`; the CLI now uses OS keyring storage when available and falls back to a local credential file when secure storage is unavailable.
 - The remote API requires OAuth client credentials in addition to the subscription API key. OAuth is configured once per developer/operator, not per subscription. Never ship Connxio-owned OAuth client secrets in the npm package or source code.
 - OAuth can be configured with `connxio auth configure` or environment variables. `connxio auth configure` prompts for client id, scope, and client secret. Default token URL is `https://api.connxio.com/oauth/token`; default scope is `api://connxio/.default`. Environment overrides are `CONNXIO_OAUTH_CLIENT_ID`, `CONNXIO_OAUTH_CLIENT_SECRET`, optional `CONNXIO_OAUTH_TOKEN_URL`, and optional `CONNXIO_OAUTH_SCOPE`.
-- Store OAuth client secret values through `packages/cli/src/connxio/credentials.ts`; store only OAuth metadata and secret references in config.
+- Store OAuth client secret values through `packages/cli/src/connxio/credentials.ts`; store only OAuth metadata and secret references in config. Legacy `credentials.json` entries should be migrated lazily into the keyring on access when secure storage is available.
 
 ## Initial MCP Tools
 

@@ -275,4 +275,6 @@ Non-secret config is stored in:
 - macOS/Linux: `${XDG_CONFIG_HOME:-~/.config}/connxio/config.json`
 - Windows: `%APPDATA%\connxio\config.json`
 
-Secrets are stored through the CLI credential abstraction. The current implementation uses a local credential store at the same config root so it can later move to OS keychain storage without changing context consumers.
+Secrets are stored through the CLI credential abstraction. The CLI now uses the OS keyring when available and falls back to `${XDG_CONFIG_HOME:-~/.config}/connxio/credentials.json` on macOS/Linux or `%APPDATA%\connxio\credentials.json` on Windows when secure storage is unavailable.
+
+If you already have secrets in `credentials.json`, the CLI migrates them into the OS keyring lazily as they are used and removes the legacy file entries after a successful migration.

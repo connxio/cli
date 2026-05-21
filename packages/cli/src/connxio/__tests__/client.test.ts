@@ -83,12 +83,14 @@ describe("ConnxioClient.request", () => {
   it("joins base URL and path regardless of trailing/leading slashes", async () => {
     const { calls } = installFetch(() => makeResponse({ status: 204 }));
 
-    await new ConnxioClient({ ...baseContext, baseUrl: "https://api.example.com/" }).get(
-      "v2/integrations",
-    );
-    await new ConnxioClient({ ...baseContext, baseUrl: "https://api.example.com" }).get(
-      "/v2/integrations",
-    );
+    await new ConnxioClient({
+      ...baseContext,
+      baseUrl: "https://api.example.com/",
+    }).get("v2/integrations");
+    await new ConnxioClient({
+      ...baseContext,
+      baseUrl: "https://api.example.com",
+    }).get("/v2/integrations");
 
     expect(calls[0]?.url.toString()).toBe("https://api.example.com/v2/integrations");
     expect(calls[1]?.url.toString()).toBe("https://api.example.com/v2/integrations");
@@ -117,11 +119,11 @@ describe("ConnxioClient.request", () => {
     await new ConnxioClient(baseContext).post("/v2/codecomponents");
 
     expect(calls[0]?.init?.body).toBe(JSON.stringify({ name: "x" }));
-    expect((calls[0]?.init?.headers as Record<string, string>)["Content-Type"]).toBe(
-      "application/json; x-api-version=2.0",
-    );
+    const headers0 = calls[0]?.init?.headers as Record<string, string> | undefined;
+    expect(headers0?.["Content-Type"]).toBe("application/json; x-api-version=2.0");
     expect(calls[1]?.init?.body).toBeUndefined();
-    expect((calls[1]?.init?.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    const headers1 = calls[1]?.init?.headers as Record<string, string> | undefined;
+    expect(headers1?.["Content-Type"]).toBeUndefined();
   });
 
   it("returns null for 204 and empty 200 bodies", async () => {
@@ -142,7 +144,10 @@ describe("ConnxioClient.request", () => {
     installFetch(() =>
       makeResponse({
         body: "denied",
-        headers: { "www-authenticate": "Bearer realm=\"connxio\"", "x-request-id": "req-123" },
+        headers: {
+          "www-authenticate": 'Bearer realm="connxio"',
+          "x-request-id": "req-123",
+        },
         status: 401,
         statusText: "Unauthorized",
       }),
@@ -228,7 +233,13 @@ describe("ConnxioClient.listSubscriptions", () => {
 
     const subs = await new ConnxioClient(baseContext).listSubscriptions();
     expect(subs).toEqual([
-      { active: true, companyId: "c1", companyName: "Acme", id: "s1", name: "Sub" },
+      {
+        active: true,
+        companyId: "c1",
+        companyName: "Acme",
+        id: "s1",
+        name: "Sub",
+      },
     ]);
   });
 

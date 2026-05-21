@@ -65,12 +65,14 @@ function collectHandlers(): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
   const server = new McpServer({ name: "test", version: "0.0.0" });
   const original = server.registerTool.bind(server);
-  vi.spyOn(server, "registerTool").mockImplementation(
-    ((name: string, config: unknown, cb: unknown) => {
-      handlers.set(name, cb as ToolHandler);
-      return { name } as unknown as ReturnType<typeof original>;
-    }) as typeof server.registerTool,
-  );
+  vi.spyOn(server, "registerTool").mockImplementation(((
+    name: string,
+    config: unknown,
+    cb: unknown,
+  ) => {
+    handlers.set(name, cb as ToolHandler);
+    return { name } as unknown as ReturnType<typeof original>;
+  }) as typeof server.registerTool);
 
   registerCliTools(server);
   registerContextTools(server);
@@ -276,9 +278,7 @@ describe("MCP tool registration wires tools to ConnxioClient HTTP routes", () =>
 
   it("list_subscriptions -> GET /v2/subscriptions", async () => {
     const { calls } = installFetch(() =>
-      makeResponse([
-        { active: true, companyId: "c1", companyName: "Acme", id: "s1", name: "Sub" },
-      ]),
+      makeResponse([{ active: true, companyId: "c1", companyName: "Acme", id: "s1", name: "Sub" }]),
     );
     const result = await invoke("list_subscriptions", {});
     expectSuccess(result);

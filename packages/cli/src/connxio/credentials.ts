@@ -3,84 +3,264 @@ import path from "node:path";
 
 import { getConfigDir } from "./config.js";
 
+const KEYRING_SERVICE_NAME = "com.connxio.cli";
+
 type CredentialFile = {
   apiKeys: Record<string, string>;
   oauthClientSecrets: Record<string, string>;
 };
 
-export function getCredentialStoreDescription(): string {
-  return `local file (${getCredentialPath()})`;
+type CredentialKind = "apiKey" | "oauthClientSecret";
+
+type CredentialBackend = {
+  description: string;
+  type: "file" | "keyring";
+  delete(kind: CredentialKind, ref: string): Promise<void>;
+  get(kind: CredentialKind, ref: string): Promise<string | undefined>;
+  has(kind: CredentialKind, ref: string): Promise<boolean>;
+  set(kind: CredentialKind, ref: string, value: string): Promise<void>;
+};
+
+type KeyringEntry = {
+  deleteCredential(signal?: AbortSignal | null): Promise<boolean>;
+  getPassword(signal?: AbortSignal | null): Promise<string | undefined>;
+  setPassword(password: string, signal?: AbortSignal | null): Promise<void>;
+};
+
+type KeyringModule = {
+  AsyncEntry: new (service: string, username: string) => KeyringEntry;
+  findCredentialsAsync(
+    service: string,
+    target?: string | null,
+    signal?: AbortSignal | null,
+  ): Promise<unknown>;
+};
+
+let credentialBackendPromise: Promise<CredentialBackend> | undefined;
+let fileFallbackWarningEmitted = false;
+
+export async function getCredentialStoreDescription(): Promise<string> {
+  return (await getCredentialBackend()).description;
 }
 
 export async function deleteApiKey(ref: string): Promise<void> {
-  const store = await readCredentialFile();
-  delete store.apiKeys[ref];
-  await writeCredentialFile(store);
+  await deleteCredential("apiKey", ref);
 }
 
 export async function deleteOAuthClientSecret(ref: string): Promise<void> {
-  const store = await readCredentialFile();
-  delete store.oauthClientSecrets[ref];
-  await writeCredentialFile(store);
+  await deleteCredential("oauthClientSecret", ref);
 }
 
 export async function getApiKey(ref: string): Promise<string> {
-  const store = await readCredentialFile();
-  const apiKey = store.apiKeys[ref];
-
-  if (!apiKey) {
-    throw new Error(`Missing credential for context ${ref}. Run \`connxio context add ${ref}\`.`);
-  }
-
-  return apiKey;
+  return getCredential("apiKey", ref);
 }
 
 export async function getOAuthClientSecret(ref: string): Promise<string> {
-  const store = await readCredentialFile();
-  const clientSecret = store.oauthClientSecrets[ref];
-
-  if (!clientSecret) {
-    throw new Error("Missing OAuth client secret. Run `connxio auth configure`.");
-  }
-
-  return clientSecret;
+  return getCredential("oauthClientSecret", ref);
 }
 
 export async function hasApiKey(ref: string): Promise<boolean> {
-  const store = await readCredentialFile();
-  return typeof store.apiKeys[ref] === "string" && store.apiKeys[ref].length > 0;
+  return hasCredential("apiKey", ref);
 }
 
 export async function hasOAuthClientSecret(ref: string): Promise<boolean> {
-  const store = await readCredentialFile();
-  return (
-    typeof store.oauthClientSecrets[ref] === "string" && store.oauthClientSecrets[ref].length > 0
-  );
+  return hasCredential("oauthClientSecret", ref);
 }
 
 export async function setApiKey(ref: string, apiKey: string): Promise<void> {
-  const trimmed = apiKey.trim();
-
-  if (!trimmed) {
-    throw new Error("API key cannot be empty.");
-  }
-
-  const store = await readCredentialFile();
-  store.apiKeys[ref] = trimmed;
-  await writeCredentialFile(store);
+  await setCredential("apiKey", ref, apiKey);
 }
 
 export async function setOAuthClientSecret(ref: string, clientSecret: string): Promise<void> {
-  const trimmed = clientSecret.trim();
+  await setCredential("oauthClientSecret", ref, clientSecret);
+}
 
-  if (!trimmed) {
-    throw new Error("OAuth client secret cannot be empty.");
+async function deleteCredential(kind: CredentialKind, ref: string): Promise<void> {
+  const backend = await getCredentialBackend();
+
+  await backend.delete(kind, ref);
+
+  if (backend.type === "keyring") {
+    await deleteLegacyCredentialQuietly(kind, ref);
+  }
+}
+
+async function getCredential(kind: CredentialKind, ref: string): Promise<string> {
+  const backend = await getCredentialBackend();
+  const credential = await backend.get(kind, ref);
+
+  if (credential) {
+    return credential;
   }
 
-  const store = await readCredentialFile();
-  store.oauthClientSecrets[ref] = trimmed;
-  await writeCredentialFile(store);
+  if (backend.type === "keyring") {
+    const legacyCredential = await fileCredentialBackend.get(kind, ref);
+
+    if (legacyCredential) {
+      await backend.set(kind, ref, legacyCredential);
+      await deleteLegacyCredentialQuietly(kind, ref);
+      return legacyCredential;
+    }
+  }
+
+  throw new Error(getMissingCredentialMessage(kind, ref));
 }
+
+async function getCredentialBackend(): Promise<CredentialBackend> {
+  credentialBackendPromise ??= resolveCredentialBackend();
+  return credentialBackendPromise;
+}
+
+function getCredentialFileKey(kind: CredentialKind): keyof CredentialFile {
+  return kind === "apiKey" ? "apiKeys" : "oauthClientSecrets";
+}
+
+function getKeyringAccountName(kind: CredentialKind, ref: string): string {
+  return kind === "apiKey" ? `api-key:${ref}` : `oauth-client-secret:${ref}`;
+}
+
+function getMissingCredentialMessage(kind: CredentialKind, ref: string): string {
+  return kind === "apiKey"
+    ? `Missing credential for context ${ref}. Run \`connxio context add ${ref}\`.`
+    : "Missing OAuth client secret. Run `connxio auth configure`.";
+}
+
+async function hasCredential(kind: CredentialKind, ref: string): Promise<boolean> {
+  const backend = await getCredentialBackend();
+
+  if (await backend.has(kind, ref)) {
+    return true;
+  }
+
+  return backend.type === "keyring" ? fileCredentialBackend.has(kind, ref) : false;
+}
+
+function normalizeKeyringModule(value: unknown): KeyringModule {
+  const candidate = isRecord(value) ? value : undefined;
+  const defaultCandidate =
+    candidate &&
+    Object.prototype.hasOwnProperty.call(candidate, "default") &&
+    isRecord(candidate["default"])
+      ? candidate["default"]
+      : undefined;
+  const normalizedCandidate = defaultCandidate ? { ...defaultCandidate, ...candidate } : candidate;
+
+  if (
+    !normalizedCandidate ||
+    typeof normalizedCandidate.AsyncEntry !== "function" ||
+    typeof normalizedCandidate.findCredentialsAsync !== "function"
+  ) {
+    throw new Error("@napi-rs/keyring did not expose the expected API.");
+  }
+
+  return {
+    AsyncEntry: normalizedCandidate.AsyncEntry as KeyringModule["AsyncEntry"],
+    findCredentialsAsync:
+      normalizedCandidate.findCredentialsAsync as KeyringModule["findCredentialsAsync"],
+  };
+}
+
+async function resolveCredentialBackend(): Promise<CredentialBackend> {
+  try {
+    const keyring = normalizeKeyringModule(await import("@napi-rs/keyring"));
+    await keyring.findCredentialsAsync(KEYRING_SERVICE_NAME);
+    return createKeyringCredentialBackend(keyring);
+  } catch (error: unknown) {
+    warnFileFallback(error);
+    return fileCredentialBackend;
+  }
+}
+
+async function setCredential(kind: CredentialKind, ref: string, value: string): Promise<void> {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    throw new Error(
+      kind === "apiKey" ? "API key cannot be empty." : "OAuth client secret cannot be empty.",
+    );
+  }
+
+  const backend = await getCredentialBackend();
+  await backend.set(kind, ref, trimmed);
+
+  if (backend.type === "keyring") {
+    await deleteLegacyCredentialQuietly(kind, ref);
+  }
+}
+
+function warnFileFallback(error: unknown): void {
+  if (fileFallbackWarningEmitted) {
+    return;
+  }
+
+  fileFallbackWarningEmitted = true;
+  console.warn(
+    `Connxio secure credential storage unavailable; falling back to local file storage at ${getCredentialPath()}: ${formatError(error)}`,
+  );
+}
+
+async function deleteLegacyCredentialQuietly(kind: CredentialKind, ref: string): Promise<void> {
+  try {
+    await fileCredentialBackend.delete(kind, ref);
+  } catch {
+    // Keyring writes should not fail just because legacy file cleanup did.
+  }
+}
+
+function createKeyringCredentialBackend(keyring: KeyringModule): CredentialBackend {
+  const get = async (kind: CredentialKind, ref: string): Promise<string | undefined> => {
+    const entry = new keyring.AsyncEntry(KEYRING_SERVICE_NAME, getKeyringAccountName(kind, ref));
+    const credential = await entry.getPassword();
+    return typeof credential === "string" && credential.length > 0 ? credential : undefined;
+  };
+
+  return {
+    description: "OS keyring",
+    type: "keyring",
+    async delete(kind, ref) {
+      const entry = new keyring.AsyncEntry(KEYRING_SERVICE_NAME, getKeyringAccountName(kind, ref));
+
+      if ((await get(kind, ref)) === undefined) {
+        return;
+      }
+
+      await entry.deleteCredential();
+    },
+    get,
+    async has(kind, ref) {
+      return (await get(kind, ref)) !== undefined;
+    },
+    async set(kind, ref, value) {
+      const entry = new keyring.AsyncEntry(KEYRING_SERVICE_NAME, getKeyringAccountName(kind, ref));
+      await entry.setPassword(value);
+    },
+  };
+}
+
+const fileCredentialBackend: CredentialBackend = {
+  description: `local file (${getCredentialPath()})`,
+  type: "file",
+  async delete(kind, ref) {
+    const store = await readCredentialFile();
+    delete store[getCredentialFileKey(kind)][ref];
+    await writeCredentialFile(store);
+  },
+  async get(kind, ref) {
+    const store = await readCredentialFile();
+    const credential = store[getCredentialFileKey(kind)][ref];
+    return typeof credential === "string" && credential.length > 0 ? credential : undefined;
+  },
+  async has(kind, ref) {
+    const store = await readCredentialFile();
+    const credential = store[getCredentialFileKey(kind)][ref];
+    return typeof credential === "string" && credential.length > 0;
+  },
+  async set(kind, ref, value) {
+    const store = await readCredentialFile();
+    store[getCredentialFileKey(kind)][ref] = value;
+    await writeCredentialFile(store);
+  },
+};
 
 function getCredentialPath(): string {
   return path.join(getConfigDir(), "credentials.json");
@@ -153,4 +333,8 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

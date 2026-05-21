@@ -75,7 +75,10 @@ describe("withToolErrors", () => {
 
 describe("getClient", () => {
   it("passes the supplied contextId to resolveContext and returns a ConnxioClient", async () => {
-    resolveContextMock.mockResolvedValue({ apiKeyRef: "ref-1", baseUrl: "https://api.example.com" });
+    resolveContextMock.mockResolvedValue({
+      apiKeyRef: "ref-1",
+      baseUrl: "https://api.example.com",
+    });
 
     const client = await getClient("ctx-1");
 
@@ -84,7 +87,10 @@ describe("getClient", () => {
   });
 
   it("passes undefined through when no contextId is given", async () => {
-    resolveContextMock.mockResolvedValue({ apiKeyRef: "ref-1", baseUrl: "https://api.example.com" });
+    resolveContextMock.mockResolvedValue({
+      apiKeyRef: "ref-1",
+      baseUrl: "https://api.example.com",
+    });
 
     const client = await getClient();
 
