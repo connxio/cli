@@ -40,8 +40,6 @@ You will be prompted for:
 - OAuth scope, defaulting to `api://connxio/.default`
 - OAuth client secret
 
-The OAuth token URL is always `https://api.connxio.com/oauth/token`.
-
 Check status:
 
 ```bash
@@ -64,8 +62,6 @@ CONNXIO_OAUTH_SCOPE="api://connxio/.default"
 ```
 
 `CONNXIO_OAUTH_TOKEN_URL` and `CONNXIO_OAUTH_SCOPE` are optional overrides.
-
-Do not commit OAuth client secrets or put them in MCP client config unless you explicitly accept that local setup tradeoff.
 
 ## Configure Contexts
 
@@ -101,17 +97,19 @@ VS Code 1.99+ supports MCP servers natively via GitHub Copilot agent mode.
 
 **Option 1 — user settings (all projects)**
 
-Open `settings.json` (`Cmd+Shift+P` → _Preferences: Open User Settings (JSON)_) and add:
+Open the command palette (`Ctrl+Shift+P`/`Cmd+Shift+P`) and select `MCP: Add server`.
+
+Select `stdio` transport, `connxio mcp serve` as the command, and set the name to `connxio`. This will create a user-level MCP server registration that is available in all projects.
+
+Alternatively, edit the user level mcp.json config file directly. Open the command palette and select `MCP: Open User Configuration`, then add:
 
 ```json
 {
-  "mcp": {
-    "servers": {
-      "connxio": {
-        "type": "stdio",
-        "command": "connxio",
-        "args": ["mcp", "serve"]
-      }
+  "servers": {
+    "connxio": {
+      "type": "stdio",
+      "command": "connxio",
+      "args": ["mcp", "serve"]
     }
   }
 }
@@ -133,7 +131,7 @@ Create `.vscode/mcp.json` in your project root:
 }
 ```
 
-After saving, open a Copilot chat in agent mode (`@workspace` or the **Agent** dropdown) and the Connxio tools will be available.
+The Connxio MCP server will now be available when you open this project in VS Code.
 
 If you need to pass environment variables (e.g. for OAuth or a custom API base URL), add an `env` block:
 
@@ -160,6 +158,12 @@ Do not commit files containing OAuth client secrets to source control.
 Register the installed MCP server:
 
 ```bash
+claude mcp add --transport stdio connxio -- connxio mcp serve
+```
+
+To register the MCP server at user level (available in all projects), add `--scope user`:
+
+```bash
 claude mcp add --scope user --transport stdio connxio -- connxio mcp serve
 ```
 
@@ -173,7 +177,7 @@ If you need to replace an existing registration:
 
 ```bash
 claude mcp remove connxio
-claude mcp add --scope user --transport stdio connxio -- connxio mcp serve
+claude mcp add --transport stdio connxio -- connxio mcp serve
 ```
 
 ## API Base URL
