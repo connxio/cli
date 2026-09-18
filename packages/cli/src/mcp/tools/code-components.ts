@@ -22,7 +22,9 @@ export function registerCodeComponentTools(server: McpServer): void {
     },
     async ({ contextId }) =>
       withToolErrors(async () => ({
-        codeComponents: await (await getClient(contextId)).get("/v2/codecomponents"),
+        codeComponents: await (
+          await getClient(contextId)
+        ).get("/v2/codecomponents"),
       })),
   );
 
@@ -73,12 +75,21 @@ export function registerCodeComponentTools(server: McpServer): void {
             "Whether to zip the containing directory when uploading a .dll. Defaults to true when the existing component was previously uploaded as a .zip.",
           ),
         contextId: contextIdSchema,
-        filePath: z.string().describe("Absolute or relative path to a local .dll or .zip file."),
+        description: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Optional code component description."),
+        filePath: z
+          .string()
+          .describe("Absolute or relative path to a local .dll or .zip file."),
         name: z.string().describe("Code component display name."),
         type: z
           .string()
           .optional()
-          .describe("Optional code component type. Defaults to the existing type or Map."),
+          .describe(
+            "Optional code component type. Defaults to the existing type or Map.",
+          ),
         version: z
           .string()
           .optional()
@@ -87,10 +98,19 @@ export function registerCodeComponentTools(server: McpServer): void {
           ),
       },
     },
-    async ({ autoZip, contextId, filePath, name, type, version }) =>
+    async ({
+      autoZip,
+      contextId,
+      description,
+      filePath,
+      name,
+      type,
+      version,
+    }) =>
       withToolErrors(async () => ({
         upload: await uploadCodeComponent(await getClient(contextId), {
           autoZip,
+          description,
           filePath,
           name,
           type,
@@ -102,11 +122,15 @@ export function registerCodeComponentTools(server: McpServer): void {
   server.registerTool(
     "deprecate_code_component",
     {
-      description: "Deprecate a Connxio code component by id. Requires contextId.",
+      description:
+        "Deprecate a Connxio code component by id. Requires contextId.",
       inputSchema: {
         contextId: contextIdSchema,
         id: z.string().describe("Code component id."),
-        version: z.string().optional().describe("Optional version to deprecate."),
+        version: z
+          .string()
+          .optional()
+          .describe("Optional version to deprecate."),
       },
     },
     async ({ contextId, id, version }) =>
@@ -125,14 +149,24 @@ export function registerCodeComponentTools(server: McpServer): void {
       description:
         "Update the version of a code component used inside an integration. Requires contextId.",
       inputSchema: {
-        componentName: z.string().describe("Code component display name to update."),
+        componentName: z
+          .string()
+          .describe("Code component display name to update."),
         contextId: contextIdSchema,
         integrationId: z.string().describe("Integration id."),
         newVersion: z.string().describe("New code component version to set."),
-        oldVersion: z.string().describe("Current code component version to replace."),
+        oldVersion: z
+          .string()
+          .describe("Current code component version to replace."),
       },
     },
-    async ({ componentName, contextId, integrationId, newVersion, oldVersion }) =>
+    async ({
+      componentName,
+      contextId,
+      integrationId,
+      newVersion,
+      oldVersion,
+    }) =>
       withToolErrors(async () => ({
         update: await updateComponentInIntegration(await getClient(contextId), {
           componentName,
@@ -146,7 +180,8 @@ export function registerCodeComponentTools(server: McpServer): void {
   server.registerTool(
     "rename_code_component",
     {
-      description: "Update a Connxio code component name by id. Requires contextId.",
+      description:
+        "Update a Connxio code component name by id. Requires contextId.",
       inputSchema: {
         contextId: contextIdSchema,
         id: z.string().describe("Code component id."),
@@ -166,7 +201,8 @@ export function registerCodeComponentTools(server: McpServer): void {
   server.registerTool(
     "delete_code_component",
     {
-      description: "Delete a Connxio code component by id. Requires contextId and confirm: true.",
+      description:
+        "Delete a Connxio code component by id. Requires contextId and confirm: true.",
       inputSchema: {
         contextId: contextIdSchema,
         id: z.string().describe("Code component id."),

@@ -2,7 +2,16 @@ import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import { ZipFile } from "yazl";
 
@@ -23,11 +32,12 @@ type CodeComponentRecord = {
 };
 
 export type UploadCodeComponentInput = {
-  autoZip?: boolean;
+  autoZip?: boolean | undefined;
+  description?: string | null | undefined;
   filePath: string;
   name: string;
-  type?: string;
-  version?: string;
+  type?: string | undefined;
+  version?: string | undefined;
 };
 
 export type UploadCodeComponentResult = {
@@ -78,15 +88,22 @@ export async function uploadCodeComponent(
     ? await getLatestComponentVersion(client, existingComponent)
     : null;
   const resolvedVersion =
-    requestedVersion ?? incrementVersion(previousVersion ?? "1.0.0", !previousVersion);
+    requestedVersion ??
+    incrementVersion(previousVersion ?? "1.0.0", !previousVersion);
   const componentId = existingComponent?.id ?? randomUUID();
-  const componentType = requestedType ?? existingComponent?.type ?? DEFAULT_COMPONENT_TYPE;
-  const warnings = collectFileTypeWarnings(existingComponent, sourceFileType, input.autoZip);
+  const componentType =
+    requestedType ?? existingComponent?.type ?? DEFAULT_COMPONENT_TYPE;
+  const warnings = collectFileTypeWarnings(
+    existingComponent,
+    sourceFileType,
+    input.autoZip,
+  );
 
   let uploadFilePath = sourceFilePath;
   let tempDirectoryPath: string | undefined;
   const autoZipped =
-    sourceFileType === "dll" && shouldAutoZip(existingComponent, sourceFileType, input.autoZip);
+    sourceFileType === "dll" &&
+    shouldAutoZip(existingComponent, sourceFileType, input.autoZip);
 
   try {
     if (autoZipped) {
@@ -101,6 +118,9 @@ export async function uploadCodeComponent(
     const apiResult = await client.put("/v2/codecomponents", {
       body: {
         componentOriginalFilename: uploadedFilename,
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
         id: componentId,
         mappingDll: uploadBuffer.toString("base64"),
         name,
@@ -150,16 +170,21 @@ export async function updateComponentInIntegration(
     throw new Error("Both oldVersion and newVersion are required.");
   }
 
-  const integration = await client.get(`/v2/integrations/${encodeURIComponent(integrationId)}`);
+  const integration = await client.get(
+    `/v2/integrations/${encodeURIComponent(integrationId)}`,
+  );
 
   if (!isRecord(integration)) {
     throw new Error(`Integration ${integrationId} was not found.`);
   }
 
-  const existingComponent = await findCodeComponentByName(client, componentName);
+  const existingComponent = await findCodeComponentByName(
+    client,
+    componentName,
+  );
   const nextIntegration = JSON.parse(JSON.stringify(integration)) as unknown;
-  const matchTerms = [existingComponent?.id, componentName].filter((value): value is string =>
-    Boolean(value),
+  const matchTerms = [existingComponent?.id, componentName].filter(
+    (value): value is string => Boolean(value),
   );
   const updated = replaceComponentVersion(
     nextIntegration,
@@ -179,9 +204,12 @@ export async function updateComponentInIntegration(
     };
   }
 
-  const result = await client.put(`/v2/integrations/${encodeURIComponent(integrationId)}`, {
-    body: nextIntegration,
-  });
+  const result = await client.put(
+    `/v2/integrations/${encodeURIComponent(integrationId)}`,
+    {
+      body: nextIntegration,
+    },
+  );
 
   return {
     componentId: existingComponent?.id ?? null,
@@ -192,7 +220,9 @@ export async function updateComponentInIntegration(
   };
 }
 
-function normalizeOptionalString(value: string | undefined): string | undefined {
+function normalizeOptionalString(
+  value: string | undefined,
+): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
 }
@@ -265,7 +295,9 @@ async function getLatestComponentVersion(
     `/v2/codecomponents/${encodeURIComponent(component.id)}/versions`,
   );
   const versionCandidates = Array.isArray(versionsResponse)
-    ? versionsResponse.map(readVersionValue).filter((version) => version !== undefined)
+    ? versionsResponse
+        .map(readVersionValue)
+        .filter((version) => version !== undefined)
     : [];
 
   if (component.version) {
@@ -302,13 +334,18 @@ function pickLatestVersion(versions: string[]): string | undefined {
 
   const parsedVersions = versions
     .map((version) => ({ parsed: parseVersion(version), version }))
-    .filter((item): item is { parsed: number[]; version: string } => item.parsed !== undefined);
+    .filter(
+      (item): item is { parsed: number[]; version: string } =>
+        item.parsed !== undefined,
+    );
 
   if (parsedVersions.length === 0) {
     return versions[0];
   }
 
-  parsedVersions.sort((left, right) => compareVersionParts(right.parsed, left.parsed));
+  parsedVersions.sort((left, right) =>
+    compareVersionParts(right.parsed, left.parsed),
+  );
   return parsedVersions[0]?.version;
 }
 
@@ -367,7 +404,11 @@ function shouldAutoZip(
     return autoZip;
   }
 
-  return extname(existingComponent?.componentOriginalFilename ?? "").toLowerCase() === ".zip";
+  return (
+    extname(
+      existingComponent?.componentOriginalFilename ?? "",
+    ).toLowerCase() === ".zip"
+  );
 }
 
 function collectFileTypeWarnings(
@@ -379,13 +420,19 @@ function collectFileTypeWarnings(
     return [];
   }
 
-  const existingFileType = extname(existingComponent.componentOriginalFilename).toLowerCase();
+  const existingFileType = extname(
+    existingComponent.componentOriginalFilename,
+  ).toLowerCase();
 
   if (!existingFileType || existingFileType === `.${sourceFileType}`) {
     return [];
   }
 
-  if (existingFileType === ".zip" && sourceFileType === "dll" && autoZip !== false) {
+  if (
+    existingFileType === ".zip" &&
+    sourceFileType === "dll" &&
+    autoZip !== false
+  ) {
     return [];
   }
 
@@ -442,19 +489,29 @@ async function addDirectoryToZip(
       continue;
     }
 
-    const relativePath = relative(rootDirectoryPath, absolutePath).split(sep).join("/");
+    const relativePath = relative(rootDirectoryPath, absolutePath)
+      .split(sep)
+      .join("/");
     zipFile.addFile(absolutePath, relativePath);
   }
 }
 
-function parseCodeComponentRecord(value: unknown): CodeComponentRecord | undefined {
-  if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string") {
+function parseCodeComponentRecord(
+  value: unknown,
+): CodeComponentRecord | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string"
+  ) {
     return undefined;
   }
 
   return {
     componentOriginalFilename:
-      typeof value.componentOriginalFilename === "string" ? value.componentOriginalFilename : null,
+      typeof value.componentOriginalFilename === "string"
+        ? value.componentOriginalFilename
+        : null,
     id: value.id,
     name: value.name,
     sasUri: typeof value.sasUri === "string" ? value.sasUri : null,
@@ -478,7 +535,15 @@ function replaceComponentVersion(
     let changed = false;
 
     for (const item of value) {
-      if (replaceComponentVersion(item, matchTerms, oldVersion, newVersion, options)) {
+      if (
+        replaceComponentVersion(
+          item,
+          matchTerms,
+          oldVersion,
+          newVersion,
+          options,
+        )
+      ) {
         changed = true;
       }
     }
@@ -488,7 +553,9 @@ function replaceComponentVersion(
 
   const record = value;
   const referencesComponent = Object.values(record).some(
-    (entry) => typeof entry === "string" && matchTerms.some((term) => entry.includes(term)),
+    (entry) =>
+      typeof entry === "string" &&
+      matchTerms.some((term) => entry.includes(term)),
   );
   let changed = false;
 
@@ -506,7 +573,11 @@ function replaceComponentVersion(
         continue;
       }
 
-      if (options.newSasUri && lowerKey.includes("sasuri") && entry.includes(oldVersion)) {
+      if (
+        options.newSasUri &&
+        lowerKey.includes("sasuri") &&
+        entry.includes(oldVersion)
+      ) {
         record[key] = options.newSasUri;
         changed = true;
       }
@@ -518,7 +589,15 @@ function replaceComponentVersion(
       try {
         const parsed = JSON.parse(entry) as unknown;
 
-        if (replaceComponentVersion(parsed, matchTerms, oldVersion, newVersion, options)) {
+        if (
+          replaceComponentVersion(
+            parsed,
+            matchTerms,
+            oldVersion,
+            newVersion,
+            options,
+          )
+        ) {
           record[key] = JSON.stringify(parsed);
           changed = true;
         }
@@ -528,7 +607,15 @@ function replaceComponentVersion(
       continue;
     }
 
-    if (replaceComponentVersion(entry, matchTerms, oldVersion, newVersion, options)) {
+    if (
+      replaceComponentVersion(
+        entry,
+        matchTerms,
+        oldVersion,
+        newVersion,
+        options,
+      )
+    ) {
       changed = true;
     }
   }

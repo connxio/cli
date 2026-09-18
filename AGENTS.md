@@ -96,13 +96,14 @@ Connxio-Api-Key: <api key>
 
 V2 management calls should use `Accept: application/json; x-api-version=2.0` and `Content-Type: application/json; x-api-version=2.0` when sending JSON bodies.
 
-Code component uploads also use `PUT /v2/codecomponents`. The CLI reads local `.dll` or `.zip` files, base64-encodes the file contents into `mappingDll`, and sets `componentOriginalFilename`. When uploading a `.dll`, support auto-zipping the containing output directory when requested and default to auto-zipping if the existing component was previously uploaded as a `.zip`.
+Code component uploads also use `PUT /v2/codecomponents`. The CLI reads local `.dll` or `.zip` files, base64-encodes the file contents into `mappingDll`, and sets `componentOriginalFilename`. The upload tool accepts an optional, nullable `description`, forwards supplied values unchanged, and omits the field when unspecified, matching the Swagger `CodeMappingMetaDataRequest` schema. When uploading a `.dll`, support auto-zipping the containing output directory when requested and default to auto-zipping if the existing component was previously uploaded as a `.zip`.
 
 ## Coding Guidance
 
 - Use TypeScript.
 - Use Vite+ as the repository toolchain.
 - Keep shared Vite+ configuration in the root `vite.config.ts`.
+- Run `vp exec tsc --noEmit` for TypeScript validation; the current `vp check` only checks formatting and lint. With `exactOptionalPropertyTypes`, inputs that accept explicit `undefined` must include it in their property types.
 - Use `vp install`, `vp check`, `vp test`, `vp run`, and `vp pack` over direct package-manager or tool-specific commands when working in this repository.
 - Prefer small modules with clear responsibilities.
 - Use schema validation for tool inputs.
