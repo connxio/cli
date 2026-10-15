@@ -17,6 +17,8 @@ export type ConnxioClientContext = {
 
 export type ConnxioRequestOptions = {
   body?: unknown;
+  rawBody?: { content: Uint8Array; contentType: string };
+  responseType?: "bytes";
   query?: Record<string, boolean | number | string | undefined>;
 };
 
@@ -29,6 +31,14 @@ export class ConnxioClient {
 
   async get(path: string, options?: ConnxioRequestOptions): Promise<unknown> {
     return this.request("GET", path, options);
+  }
+
+  async getBytes(path: string): Promise<Buffer> {
+    const result = await this.request("GET", path, { responseType: "bytes" });
+    if (!Buffer.isBuffer(result)) {
+      throw new Error("Connxio API response was not binary content.");
+    }
+    return result;
   }
 
   async post(path: string, options?: ConnxioRequestOptions): Promise<unknown> {
@@ -101,6 +111,9 @@ async function requestWithApiKey(
   apiKey: string,
   options: ConnxioRequestOptions = {},
 ): Promise<unknown> {
+  if (options.body !== undefined && options.rawBody !== undefined) {
+    throw new Error("A Connxio request cannot have both JSON and raw content.");
+  }
   const url = buildRequestUrl(baseUrl, requestPath);
 
   for (const [key, value] of Object.entries(options.query ?? {})) {
@@ -123,8 +136,12 @@ async function requestWithApiKey(
     headers["Content-Type"] = mediaType;
   }
 
+  if (options.rawBody !== undefined) {
+    headers["Content-Type"] = options.rawBody.contentType;
+  }
+
   const response = await fetch(url, {
-    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    ...requestBody(options),
     headers,
     method,
     redirect: "manual",
@@ -147,7 +164,7 @@ async function requestWithApiKey(
     });
   }
 
-  return parseResponse(response);
+  return parseResponse(response, options.responseType);
 }
 
 async function followRedirect(input: {
@@ -174,7 +191,7 @@ async function followRedirect(input: {
   allowInsecureTlsIfLocal(nextUrl);
 
   const response = await fetch(nextUrl, {
-    ...(input.options.body === undefined ? {} : { body: JSON.stringify(input.options.body) }),
+    ...requestBody(input.options),
     headers: input.headers,
     method: input.method,
     redirect: "manual",
@@ -196,15 +213,26 @@ async function followRedirect(input: {
     });
   }
 
-  return parseResponse(response);
+  return parseResponse(response, input.options.responseType);
 }
 
-async function parseResponse(response: Response): Promise<unknown> {
+function requestBody(options: ConnxioRequestOptions): { body?: string | ArrayBuffer } {
+  if (options.rawBody !== undefined) {
+    return { body: new Uint8Array(options.rawBody.content).buffer };
+  }
+  return options.body === undefined ? {} : { body: JSON.stringify(options.body) };
+}
+
+async function parseResponse(response: Response, responseType?: "bytes"): Promise<unknown> {
   if (!response.ok) {
     const body = await response.text();
     throw new Error(
       `Connxio API request failed (${response.status} ${response.statusText}): ${body.slice(0, 500)}${formatAuthFailureHeaders(response)}`,
     );
+  }
+
+  if (responseType === "bytes") {
+    return Buffer.from(await response.arrayBuffer());
   }
 
   if (response.status === 204) {

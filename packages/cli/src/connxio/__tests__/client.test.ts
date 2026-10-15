@@ -270,3 +270,45 @@ describe("ConnxioClient.listSubscriptions", () => {
     );
   });
 });
+
+describe("ConnxioClient binary transport", () => {
+  it("preserves raw request bytes and content type through redirects", async () => {
+    const { calls } = installFetch((call) =>
+      call.url.pathname.endsWith("/redirected")
+        ? makeResponse({ body: "{}" })
+        : makeResponse({ status: 307, headers: { location: "/v3/redirected" } }),
+    );
+    const content = Buffer.from([0, 255, 128]);
+    await new ConnxioClient(baseContext).post("/v3/files", {
+      rawBody: { content, contentType: "application/octet-stream" },
+    });
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(Buffer.from(call.init?.body as ArrayBuffer)).toEqual(content);
+      expect(call.init?.headers).toMatchObject({
+        "Content-Type": "application/octet-stream",
+        Accept: "application/json; x-api-version=3.0",
+      });
+    }
+  });
+
+  it("rejects ambiguous JSON and raw bodies before fetching", async () => {
+    const { calls } = installFetch(() => makeResponse({ body: "{}" }));
+    await expect(
+      new ConnxioClient(baseContext).post("/v3/files", {
+        body: {},
+        rawBody: { content: Buffer.from("a"), contentType: "text/plain" },
+      }),
+    ).rejects.toThrow("both JSON and raw");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("reports HTTP errors for binary downloads", async () => {
+    installFetch(() =>
+      makeResponse({ status: 404, statusText: "Not Found", body: "File missing" }),
+    );
+    await expect(new ConnxioClient(baseContext).getBytes("/v3/files/content")).rejects.toThrow(
+      "404 Not Found",
+    );
+  });
+});

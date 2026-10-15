@@ -222,7 +222,7 @@ CONNXIO_DEBUG_HTTP=true connxio mcp doctor
 
 ## MCP Tools
 
-The MCP server exposes Connxio v2 management operations and v3 action-based integrations, schemas, performance metrics, and persisted errors.
+The MCP server exposes Connxio v2 management operations and v3 action-based integrations, schemas, performance metrics, persisted errors, and testing.
 
 Context and subscription tools:
 
@@ -240,7 +240,7 @@ Integration tools:
 - `update_integration`
 - `delete_integration`
 
-All integration tools accept `apiVersion: "v2" | "v3"` (default: `"v2"`). Choose `"v3"` for action-based integrations and set `isActionBased: true` in write request bodies. The v3 create tools upsert; the no-validation variant skips graph validation and disables invalid configurations.
+All integration tools accept `apiVersion: "v2" | "v3"` (default: `"v2"`). Choose `"v3"` for action-based integrations. The API derives action-based mode from `triggers` or `actions`; `isActionBased` is computed, not a writable flag. The v3 create tools upsert; the no-validation variant skips graph validation and disables invalid configurations.
 
 Code component tools:
 
@@ -291,6 +291,32 @@ Performance and persisted error tools (v3):
 List tools accept optional `from` and `to` ISO 8601 timestamps with UTC offsets, `skip` (0–100,000; default 0), and `size` (1–1,000; default 100). They return one API page including counts and `hasNextPage`; request the next page by increasing `skip` by `size`. Performance dates default to the last 24 hours; omitted error dates include all retained errors. Integration lists require `integrationId`. Interchange lookups require `interchangeId` and do not take date or paging filters.
 
 Performance company and integration queries cover subscriptions within the current company. Persisted error queries are limited to the current subscription. An empty integration error page can also mean the integration does not exist.
+
+Testing tools (v3, scoped to the current subscription):
+
+- `list_test_groups`
+- `get_test_group`
+- `create_test_group`
+- `update_test_group`
+- `delete_test_group`
+- `upload_test_file`
+- `get_test_file` — uploaded file metadata
+- `download_test_file` — original bytes saved to a new local file
+- `start_test_run`
+- `list_test_runs`
+- `get_test_run`
+
+Create/update tools accept a `group` object containing `name`, a nonempty list of unique `integrationIds`, and optional `assertions` mapping integration IDs to node IDs to CxMaL expressions. Updating replaces these fields: omitted or empty assertions clears existing assertions. On a `409`, reload the group before editing again. Deleting a group cleans retained run history and requires `confirm: true`.
+
+Upload one nonempty fixture per integration using `groupId`, `integrationId`, and either `source: { "type": "text", "content": "..." }` or `source: { "type": "file", "filePath": "/path/to/fixture" }`. Text is sent as UTF-8; local file bytes are sent verbatim. Optional `fileName`, `contentType`, and `isBinary` override inferred metadata. Local files infer JSON, XML, plain text, or binary content types from their extension; binary defaults to true for `application/octet-stream`. Inline text defaults to plain text and the API's `{integrationId}.txt` filename. For example, use `contentType: "application/json"` and `fileName: "input.json"` for inline JSON. JSON/XML content is never wrapped in a JSON string.
+
+`download_test_file` requires a local destination `filePath`; its parent directory must exist. It returns an absolute path and byte count, preserves original bytes, and refuses to overwrite an existing file. Local paths refer to the machine running the MCP server.
+
+`start_test_run` starts real integration execution and requires all group fixtures before submission. It returns run metadata immediately and never automatically retries a failed submission. Optional `connxioApiKeyId` is an API key **ID**, never a secret. Check history before manually resubmitting after an uncertain response.
+
+`list_test_runs` returns one API page with counts and `hasNextPage`. Optional `skip` ranges from 0–100,000 (default 0); `size` ranges from 1–1,000 (default 100). Increase `skip` by `size` to continue. History contains run metadata; use `get_test_run` for evaluated results.
+
+`get_test_run` takes `groupId`, `runId`, optional `waitSeconds` (0–60, MCP default 0), and optional `includeStatusEvents` (API default false). It performs one lookup or bounded wait, without automatic polling. Inspect `run.status` and `run.isComplete`: HTTP 202 means running; HTTP 200 includes completed failures. Status values are `InProgress`, `Passed`, `Failed`, `Terminated`, and `Timeout`. Assertion verdicts are returned even without detailed events; disconnecting a wait does not cancel execution.
 
 Write tools require `contextId`. Destructive tools require `contextId` and `confirm: true`.
 

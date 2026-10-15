@@ -69,11 +69,13 @@ Prioritize read-only tools first:
 - `list_security_configs`
 - `get_security_config`
 
-Support all non-message v2 management operations, plus v3 action-based integrations, schemas, performance metrics, and persisted errors. Exclude `/messages` tools and internal resend endpoints for now.
+Support all non-message v2 management operations, plus v3 action-based integrations, schemas, performance metrics, persisted errors, and testing. Exclude `/messages` tools and internal resend endpoints for now.
 
-Integration tools accept `apiVersion: "v2" | "v3"`, defaulting to v2. V3 integration writes require action-based configs (`isActionBased: true`). Schemas use `/v3/schemas`; performance uses `/v3/performance`; persisted errors use singular `/v3/error`. Performance company/integration queries are company-scoped, while persisted errors are subscription-scoped. Preserve API paging metadata and return only one page per tool call.
+Integration tools accept `apiVersion: "v2" | "v3"`, defaulting to v2. V3 integration writes require action-based configs: the API derives this from `triggers` or `actions`; `isActionBased` is computed, not a writable flag. Schemas use `/v3/schemas`; performance uses `/v3/performance`; persisted errors use singular `/v3/error`. Performance company/integration queries are company-scoped, while persisted errors are subscription-scoped. Preserve API paging metadata and return only one page per tool call.
 
 Write tools require `contextId`. Destructive tools require `contextId` and `confirm: true`.
+
+Testing uses v3 `/testgroups`, `/testgroups/{groupId}/files/{integrationId}` (plus `/content`), and `/testgroups/{groupId}/testruns` (plus `/{runId}`). Create/update bodies contain name, unique integrationIds, and optional integration-id -> node-id -> CxMaL assertions. PUT replaces these fields; omitted assertions clears them. File uploads send raw bytes, never JSON-stringified text; downloads preserve bytes and create local files exclusively (no overwrite). All group members need nonempty fixtures before run submission. Never automatically retry execution submissions. Run lookups default to `waitSeconds: 0` for MCP and support up to 60 seconds; preserve `status`, `isComplete`, results URLs, and paging metadata. HTTP 200 can be a failed completed test; 202 means execution is still running.
 
 ## Relevant Connxio APIs
 

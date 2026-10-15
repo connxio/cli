@@ -56,7 +56,7 @@ export function registerIntegrationTools(server: McpServer): void {
     "create_integration",
     {
       description:
-        "Create or upsert a Connxio integration. Use v3 for action-based integrations (isActionBased: true). Requires contextId.",
+        "Create or upsert a Connxio integration. Use v3 for action-based integrations with triggers/actions (isActionBased is computed). Requires contextId.",
       inputSchema: {
         contextId: contextIdSchema,
         apiVersion: apiVersionSchema,
@@ -75,7 +75,7 @@ export function registerIntegrationTools(server: McpServer): void {
     "create_integration_no_validation",
     {
       description:
-        "Create or upsert an integration without validation (v3 skips graph validation and disables invalid integrations). Use v3 for action-based integrations (isActionBased: true). Requires contextId.",
+        "Create or upsert an integration without validation (v3 skips graph validation and disables invalid integrations). Use v3 for action-based integrations with triggers/actions (isActionBased is computed). Requires contextId.",
       inputSchema: {
         contextId: contextIdSchema,
         apiVersion: apiVersionSchema,

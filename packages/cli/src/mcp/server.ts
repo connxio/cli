@@ -8,6 +8,7 @@ import { registerSchemaTools } from "./tools/schemas.js";
 import { registerEnvironmentVariableTools } from "./tools/environment-variables.js";
 import { registerIntegrationTools } from "./tools/integrations.js";
 import { registerSecurityConfigTools } from "./tools/security-configs.js";
+import { registerTestingTools } from "./tools/testing.js";
 import { registerSubscriptionTools } from "./tools/subscriptions.js";
 
 export async function serveMcp(): Promise<void> {
@@ -21,6 +22,7 @@ export async function serveMcp(): Promise<void> {
   registerSubscriptionTools(server);
   registerIntegrationTools(server);
   registerSchemaTools(server);
+  registerTestingTools(server);
   registerDiagnosticTools(server);
   registerCodeComponentTools(server);
   registerEnvironmentVariableTools(server);
