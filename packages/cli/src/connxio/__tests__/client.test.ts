@@ -80,6 +80,17 @@ describe("ConnxioClient.request", () => {
     expect(calls[0]?.url.toString()).toBe("https://api.example.com/v2/integrations");
   });
 
+  it.each(["/v3/schemas", "v3/schemas"])("uses matching v3 media types for %s", async (path) => {
+    const { calls } = installFetch(() => makeResponse({ status: 204 }));
+    await new ConnxioClient(baseContext).put(path, { body: { id: "schema-1" } });
+    expect(calls[0]?.init?.headers).toMatchObject({
+      Accept: "application/json; x-api-version=3.0",
+      "Content-Type": "application/json; x-api-version=3.0",
+      Authorization: "Bearer test-access-token",
+      "Connxio-Api-Key": "api-key-for-ctx-1",
+    });
+  });
+
   it("joins base URL and path regardless of trailing/leading slashes", async () => {
     const { calls } = installFetch(() => makeResponse({ status: 204 }));
 

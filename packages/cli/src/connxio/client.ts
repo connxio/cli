@@ -111,14 +111,16 @@ async function requestWithApiKey(
 
   const accessToken = await getOAuthAccessToken();
   allowInsecureTlsIfLocal(url);
+  const apiVersion = /^\/?v3(?:\/|$)/.test(requestPath) ? "3.0" : "2.0";
+  const mediaType = `application/json; x-api-version=${apiVersion}`;
   const headers: Record<string, string> = {
-    Accept: "application/json; x-api-version=2.0",
+    Accept: mediaType,
     Authorization: `Bearer ${accessToken}`,
     "Connxio-Api-Key": apiKey,
   };
 
   if (options.body !== undefined) {
-    headers["Content-Type"] = "application/json; x-api-version=2.0";
+    headers["Content-Type"] = mediaType;
   }
 
   const response = await fetch(url, {

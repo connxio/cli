@@ -222,7 +222,7 @@ CONNXIO_DEBUG_HTTP=true connxio mcp doctor
 
 ## MCP Tools
 
-The MCP server exposes non-message Connxio v2 management operations.
+The MCP server exposes Connxio v2 management operations and v3 action-based integrations, schemas, performance metrics, and persisted errors.
 
 Context and subscription tools:
 
@@ -239,6 +239,8 @@ Integration tools:
 - `create_integration_no_validation`
 - `update_integration`
 - `delete_integration`
+
+All integration tools accept `apiVersion: "v2" | "v3"` (default: `"v2"`). Choose `"v3"` for action-based integrations and set `isActionBased: true` in write request bodies. The v3 create tools upsert; the no-validation variant skips graph validation and disables invalid configurations.
 
 Code component tools:
 
@@ -263,6 +265,32 @@ Security configuration tools:
 - `get_security_config`
 - `create_security_config`
 - `delete_security_config`
+
+Schema tools (v3, scoped to the current company):
+
+- `list_schemas` — latest metadata, without content
+- `get_schema` — latest version with content
+- `get_schema_versions` — all versions with content, newest first
+- `get_schema_content` — content for `id` and `schemaVersion`
+- `upload_schema` — create a schema or add a new version
+- `deprecate_schema` — toggle a version's deprecated state; calling again restores it
+- `delete_schema` — permanently delete all versions; fails if an integration references the schema
+
+`upload_schema` accepts a `schema` object with `id`, `name`, `version`, `type`, and base64-encoded `content`. Optional metadata: `description`, `webhookConnectionId`, `originalFilename`, and `uploadedBy`. Versions cannot be overwritten; an existing schema's name and type must match.
+
+Performance and persisted error tools (v3):
+
+- `list_company_performance_metrics`
+- `list_subscription_performance_metrics`
+- `list_integration_performance_metrics`
+- `get_interchange_performance_metric`
+- `list_subscription_errors`
+- `list_integration_errors`
+- `get_interchange_error`
+
+List tools accept optional `from` and `to` ISO 8601 timestamps with UTC offsets, `skip` (0–100,000; default 0), and `size` (1–1,000; default 100). They return one API page including counts and `hasNextPage`; request the next page by increasing `skip` by `size`. Performance dates default to the last 24 hours; omitted error dates include all retained errors. Integration lists require `integrationId`. Interchange lookups require `interchangeId` and do not take date or paging filters.
+
+Performance company and integration queries cover subscriptions within the current company. Persisted error queries are limited to the current subscription. An empty integration error page can also mean the integration does not exist.
 
 Write tools require `contextId`. Destructive tools require `contextId` and `confirm: true`.
 

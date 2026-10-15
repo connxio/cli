@@ -10,24 +10,30 @@ import {
   withToolErrors,
 } from "./shared.js";
 
+const apiVersionSchema = z
+  .enum(["v2", "v3"])
+  .default("v2")
+  .describe("Use v2 for legacy integrations (default), or v3 for action-based integrations.");
+
 export function registerIntegrationTools(server: McpServer): void {
   server.registerTool(
     "list_integrations",
     {
-      description: "List all Connxio integrations.",
-      inputSchema: { contextId: optionalContextIdSchema },
+      description: "List Connxio integrations: v2 legacy or v3 action-based.",
+      inputSchema: { contextId: optionalContextIdSchema, apiVersion: apiVersionSchema },
     },
-    async ({ contextId }) =>
+    async ({ contextId, apiVersion = "v2" }) =>
       withToolErrors(async () => ({
-        integrations: await (await getClient(contextId)).get("/v2/integrations"),
+        integrations: await (await getClient(contextId)).get(`/${apiVersion}/integrations`),
       })),
   );
 
   server.registerTool(
     "get_integration",
     {
-      description: "Get a Connxio integration by id.",
+      description: "Get a Connxio integration by id: v2 legacy or v3 action-based.",
       inputSchema: {
+        apiVersion: apiVersionSchema,
         contextId: optionalContextIdSchema,
         id: z.string().describe("Integration id."),
         replaceVariables: z
@@ -36,11 +42,11 @@ export function registerIntegrationTools(server: McpServer): void {
           .describe("Whether to replace environment variable strings with their values."),
       },
     },
-    async ({ contextId, id, replaceVariables }) =>
+    async ({ contextId, id, replaceVariables, apiVersion = "v2" }) =>
       withToolErrors(async () => ({
         integration: await (
           await getClient(contextId)
-        ).get(`/v2/integrations/${encodeURIComponent(id)}`, {
+        ).get(`/${apiVersion}/integrations/${encodeURIComponent(id)}`, {
           query: { replaceVariables },
         }),
       })),
@@ -49,26 +55,38 @@ export function registerIntegrationTools(server: McpServer): void {
   server.registerTool(
     "create_integration",
     {
-      description: "Create a Connxio integration. Requires contextId.",
-      inputSchema: { contextId: contextIdSchema, integration: jsonObjectSchema },
+      description:
+        "Create or upsert a Connxio integration. Use v3 for action-based integrations (isActionBased: true). Requires contextId.",
+      inputSchema: {
+        contextId: contextIdSchema,
+        apiVersion: apiVersionSchema,
+        integration: jsonObjectSchema,
+      },
     },
-    async ({ contextId, integration }) =>
+    async ({ contextId, integration, apiVersion = "v2" }) =>
       withToolErrors(async () => ({
-        result: await (await getClient(contextId)).post("/v2/integrations", { body: integration }),
+        result: await (
+          await getClient(contextId)
+        ).post(`/${apiVersion}/integrations`, { body: integration }),
       })),
   );
 
   server.registerTool(
     "create_integration_no_validation",
     {
-      description: "Create a Connxio integration without validation. Requires contextId.",
-      inputSchema: { contextId: contextIdSchema, integration: jsonObjectSchema },
+      description:
+        "Create or upsert an integration without validation (v3 skips graph validation and disables invalid integrations). Use v3 for action-based integrations (isActionBased: true). Requires contextId.",
+      inputSchema: {
+        contextId: contextIdSchema,
+        apiVersion: apiVersionSchema,
+        integration: jsonObjectSchema,
+      },
     },
-    async ({ contextId, integration }) =>
+    async ({ contextId, integration, apiVersion = "v2" }) =>
       withToolErrors(async () => ({
         result: await (
           await getClient(contextId)
-        ).post("/v2/integrations/novalidation", { body: integration }),
+        ).post(`/${apiVersion}/integrations/novalidation`, { body: integration }),
       })),
   );
 
@@ -77,16 +95,17 @@ export function registerIntegrationTools(server: McpServer): void {
     {
       description: "Update an existing Connxio integration by id. Requires contextId.",
       inputSchema: {
+        apiVersion: apiVersionSchema,
         contextId: contextIdSchema,
         id: z.string().describe("Integration id."),
         integration: jsonObjectSchema,
       },
     },
-    async ({ contextId, id, integration }) =>
+    async ({ contextId, id, integration, apiVersion = "v2" }) =>
       withToolErrors(async () => ({
         result: await (
           await getClient(contextId)
-        ).put(`/v2/integrations/${encodeURIComponent(id)}`, { body: integration }),
+        ).put(`/${apiVersion}/integrations/${encodeURIComponent(id)}`, { body: integration }),
       })),
   );
 
@@ -95,16 +114,17 @@ export function registerIntegrationTools(server: McpServer): void {
     {
       description: "Delete a Connxio integration by id. Requires contextId and confirm: true.",
       inputSchema: {
+        apiVersion: apiVersionSchema,
         contextId: contextIdSchema,
         id: z.string().describe("Integration id."),
         confirm: confirmSchema,
       },
     },
-    async ({ contextId, id }) =>
+    async ({ contextId, id, apiVersion = "v2" }) =>
       withToolErrors(async () => ({
         result: await (
           await getClient(contextId)
-        ).delete(`/v2/integrations/${encodeURIComponent(id)}`),
+        ).delete(`/${apiVersion}/integrations/${encodeURIComponent(id)}`),
       })),
   );
 }

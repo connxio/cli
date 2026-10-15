@@ -3,6 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { registerCliTools } from "./tools/cli.js";
 import { registerCodeComponentTools } from "./tools/code-components.js";
 import { registerContextTools } from "./tools/contexts.js";
+import { registerDiagnosticTools } from "./tools/diagnostics.js";
+import { registerSchemaTools } from "./tools/schemas.js";
 import { registerEnvironmentVariableTools } from "./tools/environment-variables.js";
 import { registerIntegrationTools } from "./tools/integrations.js";
 import { registerSecurityConfigTools } from "./tools/security-configs.js";
@@ -18,6 +20,8 @@ export async function serveMcp(): Promise<void> {
   registerContextTools(server);
   registerSubscriptionTools(server);
   registerIntegrationTools(server);
+  registerSchemaTools(server);
+  registerDiagnosticTools(server);
   registerCodeComponentTools(server);
   registerEnvironmentVariableTools(server);
   registerSecurityConfigTools(server);

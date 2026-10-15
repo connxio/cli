@@ -69,7 +69,9 @@ Prioritize read-only tools first:
 - `list_security_configs`
 - `get_security_config`
 
-Support all non-message v2 management operations. Exclude `/messages` tools for now.
+Support all non-message v2 management operations, plus v3 action-based integrations, schemas, performance metrics, and persisted errors. Exclude `/messages` tools and internal resend endpoints for now.
+
+Integration tools accept `apiVersion: "v2" | "v3"`, defaulting to v2. V3 integration writes require action-based configs (`isActionBased: true`). Schemas use `/v3/schemas`; performance uses `/v3/performance`; persisted errors use singular `/v3/error`. Performance company/integration queries are company-scoped, while persisted errors are subscription-scoped. Preserve API paging metadata and return only one page per tool call.
 
 Write tools require `contextId`. Destructive tools require `contextId` and `confirm: true`.
 
@@ -94,7 +96,7 @@ Authentication header:
 Connxio-Api-Key: <api key>
 ```
 
-V2 management calls should use `Accept: application/json; x-api-version=2.0` and `Content-Type: application/json; x-api-version=2.0` when sending JSON bodies.
+V2 management calls should use `Accept: application/json; x-api-version=2.0` and `Content-Type: application/json; x-api-version=2.0` when sending JSON bodies. V3 calls use `x-api-version=3.0` for both media types; the client derives the version from the request path. Schema uploads use a validated metadata object with base64 `content` matching the API byte-array field.
 
 Code component uploads also use `PUT /v2/codecomponents`. The CLI reads local `.dll` or `.zip` files, base64-encodes the file contents into `mappingDll`, and sets `componentOriginalFilename`. The upload tool accepts an optional, nullable `description`, forwards supplied values unchanged, and omits the field when unspecified, matching the Swagger `CodeMappingMetaDataRequest` schema. When uploading a `.dll`, support auto-zipping the containing output directory when requested and default to auto-zipping if the existing component was previously uploaded as a `.zip`.
 

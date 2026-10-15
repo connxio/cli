@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../connxio/contexts.js", () => ({
@@ -24,6 +26,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerCliTools } from "../cli.js";
 import { registerCodeComponentTools } from "../code-components.js";
 import { registerContextTools } from "../contexts.js";
+import { registerDiagnosticTools } from "../diagnostics.js";
+import { registerSchemaTools } from "../schemas.js";
 import { registerEnvironmentVariableTools } from "../environment-variables.js";
 import { registerIntegrationTools } from "../integrations.js";
 import { registerSecurityConfigTools } from "../security-configs.js";
@@ -61,6 +65,8 @@ function installFetch(handler: (call: FetchCall) => Response | Promise<Response>
   return { calls };
 }
 
+const inputSchemas = new Map<string, z.ZodObject>();
+
 function collectHandlers(): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
   const server = new McpServer({ name: "test", version: "0.0.0" });
@@ -71,6 +77,7 @@ function collectHandlers(): Map<string, ToolHandler> {
     cb: unknown,
   ) => {
     handlers.set(name, cb as ToolHandler);
+    inputSchemas.set(name, z.object((config as { inputSchema: z.ZodRawShape }).inputSchema));
     return { name } as unknown as ReturnType<typeof original>;
   }) as typeof server.registerTool);
 
@@ -78,6 +85,8 @@ function collectHandlers(): Map<string, ToolHandler> {
   registerContextTools(server);
   registerSubscriptionTools(server);
   registerIntegrationTools(server);
+  registerSchemaTools(server);
+  registerDiagnosticTools(server);
   registerCodeComponentTools(server);
   registerEnvironmentVariableTools(server);
   registerSecurityConfigTools(server);
@@ -101,7 +110,7 @@ function expectCall(
   const base = "https://api.example.com";
   expect(call?.url.toString()).toBe(`${base}${pathAndQuery}`);
   if (body !== undefined) {
-    expect(call?.init?.body).toBe(JSON.stringify(body));
+    expect(JSON.parse(call?.init?.body as string)).toEqual(body);
   } else {
     expect(call?.init?.body).toBeUndefined();
   }
@@ -124,7 +133,7 @@ async function invoke(name: string, input: Record<string, unknown> = {}) {
   if (!handler) {
     throw new Error(`tool not registered: ${name}`);
   }
-  return handler(input);
+  return handler(inputSchemas.get(name)!.parse(input));
 }
 
 describe("MCP tool registration wires tools to ConnxioClient HTTP routes", () => {
@@ -133,6 +142,21 @@ describe("MCP tool registration wires tools to ConnxioClient HTTP routes", () =>
     expect(names).toEqual(
       [
         "check_cli_update",
+        "list_schemas",
+        "get_schema",
+        "get_schema_versions",
+        "get_schema_content",
+        "upload_schema",
+        "deprecate_schema",
+        "delete_schema",
+        "list_company_performance_metrics",
+        "list_subscription_performance_metrics",
+        "list_integration_performance_metrics",
+        "get_interchange_performance_metric",
+        "list_subscription_errors",
+        "list_integration_errors",
+        "get_interchange_error",
+
         "create_environment_variable",
         "create_integration",
         "create_integration_no_validation",
@@ -328,5 +352,203 @@ describe("MCP tool registration wires tools to ConnxioClient HTTP routes", () =>
     const result = await invoke("list_integrations", {});
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/boom/);
+  });
+});
+
+describe("v3 management tools", () => {
+  const guid = "5e980872-28ca-4afb-bd35-19c76ad65942";
+
+  it.each([
+    ["list_integrations", {}, "GET", "/v3/integrations", undefined],
+    [
+      "get_integration",
+      { id: guid, replaceVariables: false },
+      "GET",
+      `/v3/integrations/${guid}?replaceVariables=false`,
+      undefined,
+    ],
+    [
+      "create_integration",
+      { integration: { isActionBased: true } },
+      "POST",
+      "/v3/integrations",
+      { isActionBased: true },
+    ],
+    [
+      "create_integration_no_validation",
+      { integration: { isActionBased: true } },
+      "POST",
+      "/v3/integrations/novalidation",
+      { isActionBased: true },
+    ],
+    [
+      "update_integration",
+      { id: guid, integration: { isActionBased: true } },
+      "PUT",
+      `/v3/integrations/${guid}`,
+      { isActionBased: true },
+    ],
+    [
+      "delete_integration",
+      { id: guid, confirm: true },
+      "DELETE",
+      `/v3/integrations/${guid}`,
+      undefined,
+    ],
+  ] as const)("%s supports action-based integrations", async (name, input, method, path, body) => {
+    const { calls } = installFetch(() => makeResponse({ ok: true }));
+    expectSuccess(await invoke(name, { ...input, contextId: "ctx-1", apiVersion: "v3" }));
+    expectCall(calls[0], method, path, body);
+    expect(calls[0]?.init?.headers).toMatchObject({
+      Accept: "application/json; x-api-version=3.0",
+    });
+    if (body)
+      expect(calls[0]?.init?.headers).toMatchObject({
+        "Content-Type": "application/json; x-api-version=3.0",
+      });
+  });
+
+  it.each([
+    ["list_schemas", {}, "GET", "/v3/schemas"],
+    ["get_schema", { id: "schema/one" }, "GET", "/v3/schemas/schema%2Fone"],
+    ["get_schema_versions", { id: "schema/one" }, "GET", "/v3/schemas/schema%2Fone/versions"],
+    [
+      "get_schema_content",
+      { id: "schema/one", schemaVersion: "1/2" },
+      "GET",
+      "/v3/schemas/schema%2Fone/versions/1%2F2/content",
+    ],
+    [
+      "deprecate_schema",
+      { contextId: "ctx-1", id: "schema/one", version: "1.0" },
+      "PUT",
+      "/v3/schemas/schema%2Fone/deprecate?version=1.0",
+    ],
+    [
+      "delete_schema",
+      { contextId: "ctx-1", id: "schema/one", confirm: true },
+      "DELETE",
+      "/v3/schemas/schema%2Fone",
+    ],
+    [
+      "get_interchange_performance_metric",
+      { interchangeId: guid },
+      "GET",
+      `/v3/performance/interchange/${guid}`,
+    ],
+    ["get_interchange_error", { interchangeId: guid }, "GET", `/v3/error/interchange/${guid}`],
+  ] as const)("%s uses its API route", async (name, input, method, path) => {
+    const { calls } = installFetch(() => makeResponse({ ok: true }));
+    expectSuccess(await invoke(name, input));
+    expectCall(calls[0], method, path);
+  });
+
+  it("uploads base64 content and preserves nullable and optional metadata", async () => {
+    const { calls } = installFetch(() => makeResponse({ id: "schema-1" }));
+    const schema = {
+      id: "schema-1",
+      name: "Orders",
+      version: "1.0.0",
+      type: "Json",
+      content: "e30=",
+      description: null,
+      webhookConnectionId: null,
+      originalFilename: "orders.json",
+      uploadedBy: "Operator",
+    };
+    expectSuccess(await invoke("upload_schema", { contextId: "ctx-1", schema }));
+    expectCall(calls[0], "PUT", "/v3/schemas", schema);
+    const { description: _description, ...withoutDescription } = schema;
+    await invoke("upload_schema", { contextId: "ctx-1", schema: withoutDescription });
+    expectCall(calls[1], "PUT", "/v3/schemas", withoutDescription);
+  });
+
+  it.each([
+    ["list_company_performance_metrics", {}, "/v3/performance/company"],
+    ["list_subscription_performance_metrics", {}, "/v3/performance/subscription"],
+    [
+      "list_integration_performance_metrics",
+      { integrationId: guid },
+      `/v3/performance/integration/${guid}`,
+    ],
+    ["list_subscription_errors", {}, "/v3/error/subscription"],
+    ["list_integration_errors", { integrationId: guid }, `/v3/error/integration/${guid}`],
+  ] as const)("%s forwards filters and preserves paging metadata", async (name, input, path) => {
+    const page = {
+      metrics: [],
+      errors: [],
+      skip: 100,
+      size: 25,
+      totalCount: 200,
+      hasNextPage: true,
+    };
+    const { calls } = installFetch(() => makeResponse(page));
+    const from = "2026-10-01T00:00:00+02:00";
+    const to = "2026-10-02T00:00:00Z";
+    const result = await invoke(name, {
+      ...input,
+      contextId: "ctx-1",
+      from,
+      to,
+      skip: 100,
+      size: 25,
+    });
+    expectSuccess(result);
+    expectCall(
+      calls[0],
+      "GET",
+      `${path}?${new URLSearchParams({ from, to, skip: "100", size: "25" })}`,
+    );
+    expect(JSON.parse(result.content[0]!.text)).toEqual(page);
+    await invoke(name, input);
+    expectCall(calls[1], "GET", path);
+  });
+
+  it.each([
+    { size: 0 },
+    { size: 1001 },
+    { size: 1.5 },
+    { skip: -1 },
+    { skip: 100001 },
+    { from: "invalid" },
+  ])("rejects invalid paging/date inputs %j before HTTP", async (input) => {
+    const { calls } = installFetch(() => makeResponse({}));
+    await expect(invoke("list_subscription_errors", input)).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects reversed date ranges before HTTP", async () => {
+    const { calls } = installFetch(() => makeResponse({}));
+    const result = await invoke("list_company_performance_metrics", {
+      from: "2026-10-02T00:00:00Z",
+      to: "2026-10-01T00:00:00Z",
+    });
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      "upload_schema",
+      { schema: { id: "x", name: "X", version: "1.0", type: "Json", content: "e30=" } },
+    ],
+    ["deprecate_schema", { id: "x", version: "1.0" }],
+    ["delete_schema", { id: "x", confirm: true }],
+    ["delete_schema", { id: "x", contextId: "ctx-1" }],
+    ["delete_schema", { id: "x", contextId: "ctx-1", confirm: false }],
+    ["get_interchange_error", { interchangeId: "not-a-guid" }],
+    ["list_integration_performance_metrics", { integrationId: "not-a-guid" }],
+    ["list_integrations", { apiVersion: "v4" }],
+    [
+      "upload_schema",
+      {
+        contextId: "ctx-1",
+        schema: { id: "x", name: "X", version: "1.0", type: "Json", content: "not base64" },
+      },
+    ],
+  ])("%s validates required context, confirmation, and API inputs", async (name, input) => {
+    const { calls } = installFetch(() => makeResponse({}));
+    await expect(invoke(name, input)).rejects.toThrow();
+    expect(calls).toHaveLength(0);
   });
 });

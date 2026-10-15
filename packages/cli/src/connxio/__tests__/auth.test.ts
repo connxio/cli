@@ -100,7 +100,9 @@ describe("getOAuthAccessToken", () => {
       oauth: { clientId: "cid", clientSecretRef: "default" },
     };
     mockClientSecrets.default = "csecret";
-    const fetchMock = vi.fn(async () => tokenResponse({ access_token: "tok-1", expires_in: 3600 }));
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      tokenResponse({ access_token: "tok-1", expires_in: 3600 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const auth = await loadAuth();
@@ -108,8 +110,8 @@ describe("getOAuthAccessToken", () => {
     expect(await auth.getOAuthAccessToken()).toBe("tok-1");
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
-    const body = init.body as URLSearchParams;
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = init?.body as URLSearchParams;
     expect(body.get("client_id")).toBe("cid");
     expect(body.get("client_secret")).toBe("csecret");
     expect(body.get("grant_type")).toBe("client_credentials");
@@ -146,15 +148,17 @@ describe("getOAuthAccessToken", () => {
     process.env.CONNXIO_OAUTH_SCOPE = "env-scope";
     process.env.CONNXIO_OAUTH_TOKEN_URL = "https://env.example.com/token";
 
-    const fetchMock = vi.fn(async () => tokenResponse({ access_token: "tok", expires_in: 3600 }));
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      tokenResponse({ access_token: "tok", expires_in: 3600 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const auth = await loadAuth();
     await auth.getOAuthAccessToken();
 
-    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(url.toString()).toBe("https://env.example.com/token");
-    const body = init.body as URLSearchParams;
+    const body = init?.body as URLSearchParams;
     expect(body.get("client_id")).toBe("env-cid");
     expect(body.get("client_secret")).toBe("env-secret");
     expect(body.get("scope")).toBe("env-scope");
