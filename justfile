@@ -1,3 +1,4 @@
+# Run `just bump 0.2.0-beta.1` for a prerelease or `just bump 0.2.0` for a stable release.
 bump version:
     npm pkg set version={{version}} --prefix packages/cli
     git add packages/cli/package.json
