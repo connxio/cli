@@ -34,6 +34,7 @@ import { registerSchemaTools } from "../schemas.js";
 import { registerEnvironmentVariableTools } from "../environment-variables.js";
 import { registerIntegrationTools } from "../integrations.js";
 import { registerSecurityConfigTools } from "../security-configs.js";
+import { registerIntegrationTestingTools } from "../integration-testing.js";
 import { registerTestingTools } from "../testing.js";
 import { registerSubscriptionTools } from "../subscriptions.js";
 
@@ -91,6 +92,7 @@ function collectHandlers(): Map<string, ToolHandler> {
   registerIntegrationTools(server);
   registerSchemaTools(server);
   registerTestingTools(server);
+  registerIntegrationTestingTools(server);
   registerDiagnosticTools(server);
   registerCodeComponentTools(server);
   registerEnvironmentVariableTools(server);
@@ -157,6 +159,13 @@ describe("MCP tool registration wires tools to ConnxioClient HTTP routes", () =>
     expect(names).toEqual(
       [
         "check_cli_update",
+        "upload_integration_test_file",
+        "get_integration_test_file",
+        "download_integration_test_file",
+        "start_integration_test_run",
+        "list_integration_test_runs",
+        "get_integration_test_run",
+
         "list_test_groups",
         "get_test_group",
         "create_test_group",
@@ -656,44 +665,54 @@ describe("testing management tools", () => {
     expectCall(calls[0], "PUT", groupPath, replacement);
   });
 
-  it("uploads inline JSON verbatim as UTF-8 bytes without JSON string encoding", async () => {
-    const { calls } = installFetch(() => makeResponse({ fileName: "input.json" }));
-    const content = '{"name":"Jøhn 👋"}\n';
-    const result = await invoke("upload_test_file", {
-      contextId: "ctx-1",
-      groupId,
-      integrationId,
-      source: { type: "text", content },
-      fileName: "input.json",
-      contentType: "application/json",
-    });
-    expectSuccess(result);
-    expect(calls[0]?.url.pathname).toBe(`${groupPath}/files/${integrationId}`);
-    expect(calls[0]?.url.searchParams.get("fileName")).toBe("input.json");
-    expect(calls[0]?.init?.method).toBe("POST");
-    expect(Buffer.from(calls[0]?.init?.body as ArrayBuffer)).toEqual(Buffer.from(content));
-    expect(calls[0]?.init?.headers).toMatchObject({ "Content-Type": "application/json" });
-  });
+  it.each(["upload_test_file", "upload_integration_test_file"])(
+    "%s uploads inline JSON verbatim as UTF-8 bytes without JSON string encoding",
+    async (tool) => {
+      const { calls } = installFetch(() => makeResponse({ fileName: "input.json" }));
+      const content = '{"name":"Jøhn 👋"}\n';
+      const result = await invoke(tool, {
+        contextId: "ctx-1",
+        groupId,
+        integrationId,
+        source: { type: "text", content },
+        fileName: "input.json",
+        contentType: "application/json",
+      });
+      expectSuccess(result);
+      expect(calls[0]?.url.pathname).toBe(
+        tool === "upload_test_file"
+          ? `${groupPath}/files/${integrationId}`
+          : `/v3/integrations/${integrationId}/testfile`,
+      );
+      expect(calls[0]?.url.searchParams.get("fileName")).toBe("input.json");
+      expect(calls[0]?.init?.method).toBe("POST");
+      expect(Buffer.from(calls[0]?.init?.body as ArrayBuffer)).toEqual(Buffer.from(content));
+      expect(calls[0]?.init?.headers).toMatchObject({ "Content-Type": "application/json" });
+    },
+  );
 
-  it("uploads local binary bytes and preserves an explicit isBinary=false override", async () => {
-    const { calls } = installFetch(() => makeResponse({}));
-    const filePath = join(await tempDirectory(), "fixture.bin");
-    const content = Buffer.from([0, 255, 128, 13, 10]);
-    await writeFile(filePath, content);
-    const input = {
-      contextId: "ctx-1",
-      groupId,
-      integrationId,
-      source: { type: "file", filePath },
-    };
-    expectSuccess(await invoke("upload_test_file", input));
-    expect(Buffer.from(calls[0]?.init?.body as ArrayBuffer)).toEqual(content);
-    expect(calls[0]?.init?.headers).toMatchObject({ "Content-Type": "application/octet-stream" });
-    expect(calls[0]?.url.searchParams.get("fileName")).toBe("fixture.bin");
-    expect(calls[0]?.url.searchParams.get("isBinary")).toBe("true");
-    await invoke("upload_test_file", { ...input, isBinary: false });
-    expect(calls[1]?.url.searchParams.get("isBinary")).toBe("false");
-  });
+  it.each(["upload_test_file", "upload_integration_test_file"])(
+    "%s uploads local binary bytes and preserves an explicit isBinary=false override",
+    async (tool) => {
+      const { calls } = installFetch(() => makeResponse({}));
+      const filePath = join(await tempDirectory(), "fixture.bin");
+      const content = Buffer.from([0, 255, 128, 13, 10]);
+      await writeFile(filePath, content);
+      const input = {
+        contextId: "ctx-1",
+        groupId,
+        integrationId,
+        source: { type: "file", filePath },
+      };
+      expectSuccess(await invoke(tool, input));
+      expect(Buffer.from(calls[0]?.init?.body as ArrayBuffer)).toEqual(content);
+      expect(calls[0]?.init?.headers).toMatchObject({ "Content-Type": "application/octet-stream" });
+      expect(calls[0]?.url.searchParams.get("fileName")).toBe("fixture.bin");
+      expect(calls[0]?.url.searchParams.get("isBinary")).toBe("true");
+      await invoke(tool, { ...input, isBinary: false });
+      expect(calls[1]?.url.searchParams.get("isBinary")).toBe("false");
+    },
+  );
 
   it.each(["empty", "missing"])("rejects %s local uploads before HTTP", async (kind) => {
     const { calls } = installFetch(() => makeResponse({}));
@@ -709,22 +728,31 @@ describe("testing management tools", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("downloads exact binary bytes and refuses to overwrite a local file", async () => {
-    const content = Buffer.from([0, 255, 128, 10, 13]);
-    const { calls } = installFetch(
-      () => new Response(content, { headers: { "content-type": "application/octet-stream" } }),
-    );
-    const filePath = join(await tempDirectory(), "result.bin");
-    const input = { groupId, integrationId, filePath };
-    const result = await invoke("download_test_file", input);
-    expectSuccess(result);
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ filePath, byteLength: content.length });
-    expect(await readFile(filePath)).toEqual(content);
-    expectCall(calls[0], "GET", `${groupPath}/files/${integrationId}/content`);
-    const retry = await invoke("download_test_file", input);
-    expect(retry.isError).toBe(true);
-    expect(await readFile(filePath)).toEqual(content);
-  });
+  it.each(["download_test_file", "download_integration_test_file"])(
+    "%s downloads exact binary bytes and refuses to overwrite a local file",
+    async (tool) => {
+      const content = Buffer.from([0, 255, 128, 10, 13]);
+      const { calls } = installFetch(
+        () => new Response(content, { headers: { "content-type": "application/octet-stream" } }),
+      );
+      const filePath = join(await tempDirectory(), "result.bin");
+      const input = { groupId, integrationId, filePath };
+      const result = await invoke(tool, input);
+      expectSuccess(result);
+      expect(JSON.parse(result.content[0]!.text)).toEqual({ filePath, byteLength: content.length });
+      expect(await readFile(filePath)).toEqual(content);
+      expectCall(
+        calls[0],
+        "GET",
+        tool === "download_test_file"
+          ? `${groupPath}/files/${integrationId}/content`
+          : `/v3/integrations/${integrationId}/testfile/content`,
+      );
+      const retry = await invoke(tool, input);
+      expect(retry.isError).toBe(true);
+      expect(await readFile(filePath)).toEqual(content);
+    },
+  );
 
   it.each([
     [202, { id: runId, isComplete: false, status: "InProgress", resultsUrl: "/results" }],
@@ -800,6 +828,174 @@ describe("testing management tools", () => {
   ])("%s validates inputs before HTTP", async (name, input) => {
     const { calls } = installFetch(() => makeResponse({}));
     await expect(invoke(name, input)).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("standalone integration testing tools", () => {
+  const integrationId = "7923fbea-123d-4180-8ef7-7f51bf51611d";
+  const runId = "447de046-ce48-41ea-8cca-ac8f5db6ca78";
+  const base = `/v3/integrations/${integrationId}`;
+  it.each([
+    ["get_integration_test_file", { integrationId }, "GET", `${base}/testfile`],
+    [
+      "start_integration_test_run",
+      { contextId: "ctx-1", integrationId },
+      "POST",
+      `${base}/testruns`,
+    ],
+    [
+      "start_integration_test_run",
+      { contextId: "ctx-1", integrationId, triggerId: "api/ input & next", connxioApiKeyId: runId },
+      "POST",
+      `${base}/testruns?connxioApiKeyId=${runId}&triggerId=api%2F+input+%26+next`,
+    ],
+    ["list_integration_test_runs", { integrationId }, "GET", `${base}/testruns`],
+    [
+      "list_integration_test_runs",
+      { integrationId, skip: 100, size: 25 },
+      "GET",
+      `${base}/testruns?skip=100&size=25`,
+    ],
+    [
+      "get_integration_test_run",
+      { integrationId, runId },
+      "GET",
+      `${base}/testruns/${runId}?waitSeconds=0`,
+    ],
+    [
+      "get_integration_test_run",
+      { integrationId, runId, waitSeconds: 60, includeStatusEvents: true },
+      "GET",
+      `${base}/testruns/${runId}?waitSeconds=60&includeStatusEvents=true`,
+    ],
+  ] as const)("%s uses the standalone API route", async (tool, input, method, path) => {
+    const { calls } = installFetch(() => makeResponse({ ok: true }));
+    expectSuccess(await invoke(tool, input));
+    expectCall(calls[0], method, path);
+    expect(calls[0]?.init?.headers).toMatchObject({
+      Accept: "application/json; x-api-version=3.0",
+    });
+  });
+
+  it.each([
+    [
+      202,
+      {
+        id: runId,
+        testGroupId: integrationId,
+        status: "InProgress",
+        isComplete: false,
+        resultsUrl: "/results",
+      },
+    ],
+    [
+      200,
+      {
+        id: runId,
+        testGroupId: integrationId,
+        status: "Failed",
+        isComplete: true,
+        testResults: { [integrationId]: { assertions: { inbound: false } } },
+      },
+    ],
+  ])("preserves HTTP %s run outcomes without exposing additional data", async (status, run) => {
+    installFetch(() => makeResponse(run, status));
+    const result = await invoke("get_integration_test_run", { integrationId, runId });
+    expectSuccess(result);
+    expect(JSON.parse(result.content[0]!.text)).toEqual({ run });
+  });
+
+  it("preserves standalone history metadata and pagination", async () => {
+    const page = {
+      runs: [{ id: runId, testGroupId: integrationId, resultsUrl: "/results" }],
+      totalCount: 125,
+      skip: 0,
+      size: 100,
+      hasNextPage: true,
+    };
+    installFetch(() => makeResponse(page));
+    const result = await invoke("list_integration_test_runs", { integrationId });
+    expect(JSON.parse(result.content[0]!.text)).toEqual(page);
+  });
+
+  it.each([400, 404, 502])("does not retry execution submissions on HTTP %s", async (status) => {
+    const { calls } = installFetch(() => makeResponse({ message: "Execution failed" }, status));
+    const result = await invoke("start_integration_test_run", {
+      contextId: "ctx-1",
+      integrationId,
+    });
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url.searchParams.has("triggerId")).toBe(false);
+    expect(calls[0]?.init?.body).toBeUndefined();
+  });
+
+  it.each([
+    ["start_integration_test_run", { integrationId }],
+    ["upload_integration_test_file", { integrationId, source: { type: "text", content: "text" } }],
+    [
+      "start_integration_test_run",
+      { contextId: "ctx-1", integrationId, connxioApiKeyId: "not-a-key-id" },
+    ],
+    ["start_integration_test_run", { contextId: "ctx-1", integrationId, triggerId: "" }],
+    ["get_integration_test_file", { integrationId: "invalid" }],
+    ["get_integration_test_run", { integrationId, runId, waitSeconds: 61 }],
+    ["get_integration_test_run", { integrationId, runId, waitSeconds: -1 }],
+    ["list_integration_test_runs", { integrationId, size: 0 }],
+    ["list_integration_test_runs", { integrationId, skip: 100001 }],
+    [
+      "upload_integration_test_file",
+      { contextId: "ctx-1", integrationId, source: { type: "text", content: "" } },
+    ],
+  ])("%s rejects invalid inputs before HTTP", async (tool, input) => {
+    const { calls } = installFetch(() => makeResponse({}));
+    await expect(invoke(tool, input)).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("integration archived request field", () => {
+  it.each(["v2", "v3"])(
+    "forwards archived true/false without dropping other %s properties",
+    async (apiVersion) => {
+      const { calls } = installFetch(() => makeResponse({}));
+      for (const tool of [
+        "create_integration",
+        "create_integration_no_validation",
+        "update_integration",
+      ]) {
+        for (const archived of [false, true]) {
+          const integration = {
+            archived,
+            name: "Example",
+            triggers: [{ id: "api" }],
+            custom: { value: 2 },
+          };
+          expectSuccess(
+            await invoke(tool, {
+              contextId: "ctx-1",
+              apiVersion,
+              id: "integration-1",
+              integration,
+            }),
+          );
+          const call = calls.at(-1);
+          expect(JSON.parse(call?.init?.body as string)).toEqual(integration);
+        }
+      }
+    },
+  );
+
+  it("rejects a non-boolean archived flag", async () => {
+    const { calls } = installFetch(() => makeResponse({}));
+    await expect(
+      invoke("update_integration", {
+        contextId: "ctx-1",
+        id: "integration-1",
+        integration: { archived: "false" },
+      }),
+    ).rejects.toThrow();
     expect(calls).toHaveLength(0);
   });
 });

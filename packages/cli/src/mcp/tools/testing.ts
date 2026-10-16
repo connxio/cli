@@ -10,8 +10,16 @@ import {
   withToolErrors,
 } from "./shared.js";
 
+import {
+  apiKeyIdSchema,
+  integrationIdSchema,
+  testFileUploadSchema,
+  testRunPageSchema,
+  testRunResultSchema,
+} from "./testing-shared.js";
+
 const groupIdSchema = z.uuid().describe("Test group id.");
-const integrationIdSchema = z.uuid().describe("Integration configuration correlation id.");
+
 const groupSchema = z
   .object({
     name: z.string().trim().min(1),
@@ -115,29 +123,7 @@ export function registerTestingTools(server: McpServer): void {
         contextId: contextIdSchema,
         groupId: groupIdSchema,
         integrationId: integrationIdSchema,
-        source: z.discriminatedUnion("type", [
-          z.object({ type: z.literal("text"), content: z.string().min(1) }),
-          z.object({ type: z.literal("file"), filePath: z.string().min(1) }),
-        ]),
-        fileName: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            "Optional filename override. Inline text otherwise uses the API default: {integrationId}.txt.",
-          ),
-        contentType: z
-          .string()
-          .min(1)
-          .regex(/^[^\r\n]+$/)
-          .optional()
-          .describe(
-            "Optional MIME type override. Inline text defaults to text/plain; charset=utf-8.",
-          ),
-        isBinary: z
-          .boolean()
-          .optional()
-          .describe("Override binary detection, including explicit false."),
+        ...testFileUploadSchema,
       },
     },
     async ({ contextId, groupId, integrationId, ...input }) =>
@@ -191,10 +177,7 @@ export function registerTestingTools(server: McpServer): void {
       inputSchema: {
         contextId: contextIdSchema,
         groupId: groupIdSchema,
-        connxioApiKeyId: z
-          .uuid()
-          .optional()
-          .describe("Optional API key id (GUID), never the API key secret."),
+        connxioApiKeyId: apiKeyIdSchema,
       },
     },
     async ({ contextId, groupId, connxioApiKeyId }) =>
@@ -212,22 +195,7 @@ export function registerTestingTools(server: McpServer): void {
         "List one page of test run history, newest first (v3). Preserves paging metadata. History has run metadata and results URLs; use get_test_run for evaluated outcomes.",
       inputSchema: {
         ...readGroupSchema,
-        skip: z
-          .number()
-          .int()
-          .min(0)
-          .max(100_000)
-          .optional()
-          .describe("Records to omit. API default: 0."),
-        size: z
-          .number()
-          .int()
-          .min(1)
-          .max(1_000)
-          .optional()
-          .describe(
-            "Page size. API default: 100. Increase skip by size while hasNextPage is true.",
-          ),
+        ...testRunPageSchema,
       },
     },
     async ({ contextId, groupId, skip, size }) =>
@@ -245,15 +213,7 @@ export function registerTestingTools(server: McpServer): void {
         "Get evaluated test run results (v3). Defaults to an immediate check; optionally wait up to 60 seconds. HTTP 202 means running; HTTP 200 includes failed completed tests. Inspect status and isComplete; poll again if incomplete. A disconnected wait does not cancel execution. Detailed events are optional; assertion verdicts are always included.",
       inputSchema: {
         ...readGroupSchema,
-        runId: z.uuid(),
-        waitSeconds: z
-          .number()
-          .int()
-          .min(0)
-          .max(60)
-          .default(0)
-          .describe("Seconds to wait for completion; MCP default: 0."),
-        includeStatusEvents: z.boolean().optional(),
+        ...testRunResultSchema,
       },
     },
     async ({ contextId, groupId, runId, waitSeconds, includeStatusEvents }) =>

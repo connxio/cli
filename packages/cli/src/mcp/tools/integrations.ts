@@ -5,7 +5,6 @@ import {
   confirmSchema,
   contextIdSchema,
   getClient,
-  jsonObjectSchema,
   optionalContextIdSchema,
   withToolErrors,
 } from "./shared.js";
@@ -14,6 +13,18 @@ const apiVersionSchema = z
   .enum(["v2", "v3"])
   .default("v2")
   .describe("Use v2 for legacy integrations (default), or v3 for action-based integrations.");
+
+const integrationWriteSchema = z
+  .object({
+    archived: z
+      .boolean()
+      .optional()
+      .describe("Whether the configuration is archived. API default: false."),
+  })
+  .catchall(z.unknown())
+  .describe(
+    "Integration request body. Supports optional archived and all other integration properties.",
+  );
 
 export function registerIntegrationTools(server: McpServer): void {
   server.registerTool(
@@ -60,7 +71,7 @@ export function registerIntegrationTools(server: McpServer): void {
       inputSchema: {
         contextId: contextIdSchema,
         apiVersion: apiVersionSchema,
-        integration: jsonObjectSchema,
+        integration: integrationWriteSchema,
       },
     },
     async ({ contextId, integration, apiVersion = "v2" }) =>
@@ -79,7 +90,7 @@ export function registerIntegrationTools(server: McpServer): void {
       inputSchema: {
         contextId: contextIdSchema,
         apiVersion: apiVersionSchema,
-        integration: jsonObjectSchema,
+        integration: integrationWriteSchema,
       },
     },
     async ({ contextId, integration, apiVersion = "v2" }) =>
@@ -98,7 +109,7 @@ export function registerIntegrationTools(server: McpServer): void {
         apiVersion: apiVersionSchema,
         contextId: contextIdSchema,
         id: z.string().describe("Integration id."),
-        integration: jsonObjectSchema,
+        integration: integrationWriteSchema,
       },
     },
     async ({ contextId, id, integration, apiVersion = "v2" }) =>

@@ -240,7 +240,7 @@ Integration tools:
 - `update_integration`
 - `delete_integration`
 
-All integration tools accept `apiVersion: "v2" | "v3"` (default: `"v2"`). Choose `"v3"` for action-based integrations. The API derives action-based mode from `triggers` or `actions`; `isActionBased` is computed, not a writable flag. The v3 create tools upsert; the no-validation variant skips graph validation and disables invalid configurations.
+All integration tools accept `apiVersion: "v2" | "v3"` (default: `"v2"`). Choose `"v3"` for action-based integrations. The API derives action-based mode from `triggers` or `actions`; `isActionBased` is computed, not a writable flag. Integration write bodies accept optional `archived` (boolean, API default false), which is forwarded along with the other configuration properties. The v3 create tools upsert; the no-validation variant skips graph validation and disables invalid configurations.
 
 Code component tools:
 
@@ -317,6 +317,23 @@ Upload one nonempty fixture per integration using `groupId`, `integrationId`, an
 `list_test_runs` returns one API page with counts and `hasNextPage`. Optional `skip` ranges from 0–100,000 (default 0); `size` ranges from 1–1,000 (default 100). Increase `skip` by `size` to continue. History contains run metadata; use `get_test_run` for evaluated results.
 
 `get_test_run` takes `groupId`, `runId`, optional `waitSeconds` (0–60, MCP default 0), and optional `includeStatusEvents` (API default false). It performs one lookup or bounded wait, without automatic polling. Inspect `run.status` and `run.isComplete`: HTTP 202 means running; HTTP 200 includes completed failures. Status values are `InProgress`, `Passed`, `Failed`, `Terminated`, and `Timeout`. Assertion verdicts are returned even without detailed events; disconnecting a wait does not cancel execution.
+
+Standalone integration testing tools (v3, scoped to the current company and subscription):
+
+- `upload_integration_test_file`
+- `get_integration_test_file` — standalone fixture metadata
+- `download_integration_test_file`
+- `start_integration_test_run`
+- `list_integration_test_runs`
+- `get_integration_test_run`
+
+These tools use `integrationId` without a `groupId` and support both legacy and action-based integrations through `/v3/integrations/{integrationId}/testfile` and `/testruns`. Standalone fixtures and history are separate from group fixtures and history; they share the portal's standalone test storage. In standalone run metadata, `testGroupId` equals `integrationId`. Configuration snapshots stay internal to the API.
+
+File upload/download inputs and byte-preservation behavior match the group tools. Uploads require `contextId`; text/file `source`, `contentType`, `fileName`, and `isBinary` work identically. The API normalizes stored filenames to printable ASCII basenames. Downloads require a new destination `filePath` and never overwrite an existing file.
+
+`start_integration_test_run` requires `contextId` and a nonempty saved standalone fixture. Missing/empty fixtures fail before execution. Optional `triggerId` selects an existing trigger and is not necessarily a GUID. **Omitting `triggerId` skips inbound processing**, matching the portal; supply it to run the selected trigger. Optional `connxioApiKeyId` is a key ID, never a secret. Submission returns run metadata and `resultsUrl` without waiting for completion or automatically retrying.
+
+`list_integration_test_runs` uses the same `skip`/`size` bounds and returns one page with paging metadata, including portal-created standalone runs. `get_integration_test_run` requires `integrationId` and `runId`, defaults to `waitSeconds: 0`, supports waits up to 60 seconds, and accepts `includeStatusEvents`. Inspect `run.status` and `run.isComplete`; a completed failure remains a successful HTTP 200 response, while an unfinished run returns 202. Disconnecting a wait does not cancel execution.
 
 Write tools require `contextId`. Destructive tools require `contextId` and `confirm: true`.
 
